@@ -10,6 +10,7 @@ export default defineConfig({
   base,
   plugins: [spark()],
   build: {
+    target: 'es2022',
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
