@@ -4,10 +4,45 @@
   <div import="components/welcome"></div>
 
   <section>
+    <h2 class="section-title">Videos</h2>
+    <div class="stack">
+      <div
+        import="components/video"
+        src="https://placehold.co/120"
+        title="video1"
+        description="Lorem ipsum dolor sit."
+      ></div>
+      <div
+        import="components/video"
+        src="https://placehold.co/120"
+        title="video2"
+        description="Sed do eiusmod."
+      ></div>
+      <div
+        import="components/video"
+        src="https://placehold.co/120"
+        title="video3"
+        description="Ut enim ad minim veniam."
+      ></div>
+    </div>
+  </section>
+
+  <section>
     <h2 class="section-title">Props</h2>
     <div class="stack">
-      <div import="components/profile" name="Ada Lovelace" role="Engineer" age="36" admin></div>
-      <div import="components/profile" name="Grace Hopper" role="Admiral" age="85"></div>
+      <div
+        import="components/profile"
+        name="Ada Lovelace"
+        role="Engineer"
+        age="36"
+        admin
+      ></div>
+      <div
+        import="components/profile"
+        name="Grace Hopper"
+        role="Admiral"
+        age="85"
+      ></div>
       <div import="components/profile"></div>
     </div>
   </section>
@@ -66,4 +101,5 @@
     margin-bottom: 14px;
   }
   .stack { display: flex; flex-direction: column; gap: 18px; }
+  /* .videos { display: flex; gap: 9px;} */
 </style>
