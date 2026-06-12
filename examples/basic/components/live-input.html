@@ -1,0 +1,36 @@
+<div class="card">
+  <h2>Live input</h2>
+  <p class="hint">Two-way feel: oninput updates state, text re-renders.</p>
+
+  <input type="text" oninput="{update}" placeholder="Type something…" />
+  <p class="echo">You typed: <strong>{text || '…nothing yet'}</strong></p>
+  <p class="meta">{text.length} character{text.length === 1 ? '' : 's'}, reversed: {text.split('').reverse().join('')}</p>
+</div>
+
+<script>
+  let text = '';
+  function update(event) {
+    text = event.target.value;
+  }
+</script>
+
+<style>
+  .card {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    padding: 20px;
+  }
+  h2 { margin-bottom: 6px; }
+  .hint { font-size: 13px; color: #888; margin-bottom: 14px; }
+  input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 7px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  .echo { margin-top: 12px; font-size: 14px; }
+  .meta { margin-top: 4px; font-size: 12px; color: #999; }
+</style>

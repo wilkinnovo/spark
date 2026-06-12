@@ -1,0 +1,40 @@
+<h3 class="clock">{seconds}s</h3>
+<button class="add" :disabled="running" onclick="{start}">Start</button>
+<button class="add" :disabled="!running" onclick="{stop}">Stop</button>
+<button class="ghost" onclick="{reset}">Reset</button>
+
+<script>
+  let seconds = 0;
+  let running = false;
+  let handle = null;
+
+  function start() { running = true; handle = setInterval(() => { seconds++; }, 1000); }
+  function stop()  { running = false; clearInterval(handle); }
+  function reset() { stop(); seconds = 0; }
+</script>
+
+<style>
+  .clock { font-size: 42px; font-variant-numeric: tabular-nums; margin-bottom: 16px; font-family: var(--mono); }
+  .add {
+    font-family: var(--mono);
+    background: var(--accent);
+    color: #0c0c11;
+    border: none;
+    border-radius: 8px;
+    padding: 9px 18px;
+    margin-right: 8px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .add:disabled { opacity: .35; cursor: not-allowed; }
+  .ghost {
+    font-family: var(--mono);
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 16px;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .ghost:hover { color: var(--text); border-color: var(--accent); }
+</style>

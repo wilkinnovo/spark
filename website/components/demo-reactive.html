@@ -1,0 +1,30 @@
+<p class="readout">
+  {count} × 2 = <b>{doubled}</b> — that's <b>{label}</b>
+</p>
+<button class="add" onclick="{inc}">count++</button>
+
+<script>
+  let count = 3;
+
+  $: doubled = count * 2;
+  $: label = doubled > 10 ? 'big 🔥' : 'small';
+
+  function inc() { count++; }
+</script>
+
+<style>
+  .readout { font-size: 17px; margin-bottom: 16px; font-variant-numeric: tabular-nums; }
+  .readout b { color: var(--spark); font-family: var(--mono); }
+  .add {
+    font-family: var(--mono);
+    background: var(--accent);
+    color: #0c0c11;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform .08s;
+  }
+  .add:active { transform: scale(.94); }
+</style>

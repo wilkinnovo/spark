@@ -1,0 +1,93 @@
+<section id="quickstart">
+  <h2 class="title">Get started in 60 seconds</h2>
+  <div class="steps">
+    <div class="step">
+      <span class="n">1</span>
+      <div>
+        <h3>Install</h3>
+        <pre spark-ignore>npm install spark-html</pre>
+      </div>
+    </div>
+    <div class="step">
+      <span class="n">2</span>
+      <div>
+        <h3>Add the Vite plugin & mount</h3>
+        <pre spark-ignore>// vite.config.js
+import spark from 'spark-html/vite';
+export default { plugins: [spark()] };
+
+// main.js
+import { mount } from 'spark-html';
+mount();</pre>
+      </div>
+    </div>
+    <div class="step">
+      <span class="n">3</span>
+      <div>
+        <h3>Write a component & import it</h3>
+        <pre spark-ignore>&lt;!-- components/hello.html --&gt;
+&lt;h1&gt;Hello {planet}&lt;/h1&gt;
+&lt;script&gt; let planet = 'world'; &lt;/script&gt;
+
+&lt;!-- index.html --&gt;
+&lt;div import="components/hello"&gt;&lt;/div&gt;</pre>
+      </div>
+    </div>
+  </div>
+  <a class="cta" href="/docs.html">Read the full docs →</a>
+</section>
+
+<style>
+  section {
+    max-width: 740px;
+    margin: 0 auto;
+    padding: 70px 32px 90px;
+    border-top: 1px solid var(--border);
+  }
+  .title {
+    font-size: 13px;
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: .15em;
+    color: var(--muted);
+    margin-bottom: 34px;
+  }
+  .steps { display: flex; flex-direction: column; gap: 26px; }
+  .step { display: flex; gap: 18px; }
+  .n {
+    flex-shrink: 0;
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: var(--accent-dim);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .step > div { flex: 1; min-width: 0; }
+  h3 { font-size: 15px; margin: 4px 0 10px; }
+  pre {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.7;
+    color: #c5c2d6;
+    overflow-x: auto;
+  }
+  .cta {
+    display: inline-block;
+    margin-top: 36px;
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 15px;
+  }
+  .cta:hover { text-decoration: underline; }
+</style>

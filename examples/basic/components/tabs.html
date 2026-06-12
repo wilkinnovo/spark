@@ -1,0 +1,49 @@
+<div class="card">
+  <h2>Tabs</h2>
+  <div class="tabbar">
+    <button :class="active === 'one' ? 'tab current' : 'tab'" onclick="{showOne}">One</button>
+    <button :class="active === 'two' ? 'tab current' : 'tab'" onclick="{showTwo}">Two</button>
+    <button :class="active === 'three' ? 'tab current' : 'tab'" onclick="{showThree}">Three</button>
+  </div>
+  <div class="panel" :hidden="active !== 'one'">First panel. State decides which panel is visible.</div>
+  <div class="panel" :hidden="active !== 'two'">Second panel. <code>:hidden</code> is just a dynamic attribute binding.</div>
+  <div class="panel" :hidden="active !== 'three'">Third panel. No virtual DOM, just attribute patches.</div>
+</div>
+
+<script>
+  let active = 'one';
+  function showOne()   { active = 'one'; }
+  function showTwo()   { active = 'two'; }
+  function showThree() { active = 'three'; }
+</script>
+
+<style>
+  .card {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    padding: 20px;
+  }
+  h2 { margin-bottom: 14px; }
+  .tabbar { display: flex; gap: 4px; border-bottom: 1px solid #eee; }
+  .tab {
+    padding: 8px 18px;
+    border: none;
+    background: none;
+    font-size: 14px;
+    font-family: inherit;
+    color: #888;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .tab.current { color: #5b4ff7; border-bottom-color: #5b4ff7; font-weight: 600; }
+  .panel { padding: 16px 4px 4px; font-size: 14px; color: #444; }
+  code {
+    background: #f0eeff;
+    color: #5b4ff7;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+</style>

@@ -1,0 +1,68 @@
+<input bind:value="draft" placeholder="Add a todo…" />
+<button class="add" :disabled="!draft.trim()" onclick="{add}">Add</button>
+
+<ul>
+  <template each="todo, i in todos">
+    <li>
+      <span>{todo}</span>
+      <button class="x" onclick="{remove}" :data-i="i">✕</button>
+    </li>
+  </template>
+</ul>
+<p class="meta">{summary}</p>
+
+<script>
+  let todos = ['Ship it', 'Star the repo'];
+  let draft = '';
+
+  $: summary = todos.length + (todos.length === 1 ? ' item' : ' items');
+
+  function add() {
+    if (!draft.trim()) return;
+    todos = [...todos, draft.trim()];
+    draft = '';
+  }
+
+  function remove(event) {
+    const i = Number(event.target.dataset.i);
+    todos = todos.filter((_, idx) => idx !== i);
+  }
+</script>
+
+<style>
+  input {
+    width: calc(100% - 86px);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 13px;
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+  }
+  input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+  .add {
+    font-family: var(--mono);
+    background: var(--accent);
+    color: #0c0c11;
+    border: none;
+    border-radius: 8px;
+    padding: 9px 16px;
+    margin-left: 8px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .add:disabled { opacity: .35; cursor: not-allowed; }
+  ul { list-style: none; margin-top: 14px; padding: 0; }
+  li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 4px;
+    border-bottom: 1px solid var(--border);
+    font-size: 14px;
+  }
+  .x { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 11px; padding: 4px 8px; }
+  .x:hover { color: #ff6b6b; }
+  .meta { margin-top: 10px; font-size: 12px; color: var(--muted); font-family: var(--mono); }
+</style>

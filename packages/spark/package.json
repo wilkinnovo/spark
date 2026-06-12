@@ -1,0 +1,14 @@
+{
+  "name": "spark-html",
+  "version": "0.3.0",
+  "description": "Svelte-style single-file HTML components with zero build step",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./vite": "./src/vite.js"
+  },
+  "files": ["src"],
+  "keywords": ["reactive", "html", "components", "framework", "no-build"],
+  "license": "MIT"
+}

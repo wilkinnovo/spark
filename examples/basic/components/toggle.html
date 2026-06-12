@@ -1,0 +1,50 @@
+<div class="card">
+  <h2>Toggle</h2>
+  <p class="hint">Boolean state driving a dynamic :class binding.</p>
+
+  <button class="switch" :class="on ? 'switch on' : 'switch'" onclick="{flip}">
+    <span class="knob"></span>
+  </button>
+  <span class="state">{on ? 'ON' : 'OFF'}</span>
+</div>
+
+<script>
+  let on = false;
+  function flip() { on = !on; }
+</script>
+
+<style>
+  .card {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .hint { font-size: 13px; color: #888; margin-bottom: 10px; }
+  .switch {
+    width: 52px;
+    height: 28px;
+    border-radius: 14px;
+    border: 1px solid #ddd;
+    background: #e9e9ef;
+    position: relative;
+    cursor: pointer;
+    padding: 0;
+    transition: background .15s;
+  }
+  .switch.on { background: #5b4ff7; border-color: #5b4ff7; }
+  .knob {
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: white;
+    box-shadow: 0 1px 3px rgba(0,0,0,.25);
+    transition: transform .15s;
+  }
+  .switch.on .knob { transform: translateX(24px); }
+  .state { font-size: 13px; font-weight: 600; color: #5b4ff7; }
+</style>

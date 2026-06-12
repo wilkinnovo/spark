@@ -1,0 +1,44 @@
+<div class="card">
+  <h2>Cart <span class="badge">reads the same store</span></h2>
+  <p class="empty" :hidden="cart.items.length > 0">Cart is empty — buy something above.</p>
+  <ul :hidden="cart.items.length === 0">
+    <template each="item in cart.items">
+      <li>{item}</li>
+    </template>
+  </ul>
+  <p class="total" :hidden="cart.items.length === 0">
+    {cart.items.length} item{cart.items.length === 1 ? '' : 's'} — total <strong>${cart.total}</strong>
+  </p>
+  <button :hidden="cart.items.length === 0" onclick="{clear}">Clear cart</button>
+</div>
+
+<script>
+  const cart = useStore('cart');
+
+  function clear() {
+    cart.items = [];
+    cart.total = 0;
+  }
+</script>
+
+<style>
+  .card { background: white; border: 1px solid #e0e0e0; border-radius: 10px; padding: 20px; }
+  h2 { margin-bottom: 14px; }
+  .badge { font-size: 11px; font-weight: 400; color: #0a7d52; background: #e7f7ef; padding: 2px 8px; border-radius: 10px; vertical-align: middle; }
+  .empty { font-size: 13px; color: #aaa; }
+  ul { list-style: none; padding: 0; }
+  li { padding: 6px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
+  .total { margin-top: 12px; font-size: 14px; }
+  button {
+    margin-top: 12px;
+    padding: 7px 16px;
+    border: 1px solid #ddd;
+    border-radius: 7px;
+    background: #fafafa;
+    font-size: 13px;
+    color: #c0392b;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  button:hover { background: #fdf0ee; border-color: #c0392b; }
+</style>

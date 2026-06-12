@@ -1,0 +1,25 @@
+<div class="card">
+  <h2>Lifecycle</h2>
+  <p class="hint">onMount runs after first paint; its return value is a cleanup hook.</p>
+  <p class="row">mounted at <strong>{mountedAt}</strong></p>
+  <p class="row">alive for <strong>{alive}s</strong></p>
+</div>
+
+<script>
+  let mountedAt = '…';
+  let alive = 0;
+
+  onMount(() => {
+    mountedAt = new Date().toLocaleTimeString();
+    const handle = setInterval(() => { alive++; }, 1000);
+    return () => clearInterval(handle);
+  });
+</script>
+
+<style>
+  .card { background: white; border: 1px solid #e0e0e0; border-radius: 10px; padding: 20px; }
+  h2 { margin-bottom: 6px; }
+  .hint { font-size: 13px; color: #888; margin-bottom: 14px; }
+  .row { font-size: 14px; margin: 4px 0; font-variant-numeric: tabular-nums; }
+  .row strong { color: #5b4ff7; }
+</style>

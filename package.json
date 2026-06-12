@@ -1,0 +1,14 @@
+{
+  "name": "spark-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w examples/basic",
+    "site": "npm run dev -w website",
+    "site:build": "npm run build -w website",
+    "test": "node packages/spark/test/run.js && node packages/spark/test/repro-input.js && node packages/spark/test/features.js"
+  }
+}

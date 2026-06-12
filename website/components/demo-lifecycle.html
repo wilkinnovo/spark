@@ -1,0 +1,18 @@
+<p class="row">mounted at <b>{mountedAt}</b></p>
+<p class="row">alive for <b>{alive}s</b></p>
+
+<script>
+  let mountedAt = '…';
+  let alive = 0;
+
+  onMount(() => {
+    mountedAt = new Date().toLocaleTimeString();
+    const handle = setInterval(() => { alive++; }, 1000);
+    return () => clearInterval(handle); // cleanup hook
+  });
+</script>
+
+<style>
+  .row { font-size: 15px; margin: 6px 0; font-variant-numeric: tabular-nums; }
+  .row b { color: var(--spark); font-family: var(--mono); }
+</style>

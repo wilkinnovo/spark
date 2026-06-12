@@ -1,0 +1,42 @@
+<div class="card profile">
+  <div class="avatar">{name.split(' ').map(w => w[0]).join('')}</div>
+  <div>
+    <h3>{name}</h3>
+    <p class="role">{role}{admin ? ' · admin' : ''}</p>
+    <p class="age" :hidden="!age">Age: {age}</p>
+  </div>
+</div>
+
+<script>
+  export let name = 'Anonymous';
+  export let role = 'Guest';
+  export let age = 0;
+  export let admin = false;
+</script>
+
+<style>
+  .profile {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .avatar {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: #5b4ff7;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 15px;
+    flex-shrink: 0;
+  }
+  h3 { font-size: 15px; }
+  .role { font-size: 13px; color: #888; }
+  .age { font-size: 12px; color: #aaa; }
+</style>

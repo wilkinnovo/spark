@@ -1,0 +1,69 @@
+<div import="components/navbar"></div>
+
+<div class="page">
+  <div import="components/welcome"></div>
+
+  <section>
+    <h2 class="section-title">Props</h2>
+    <div class="stack">
+      <div import="components/profile" name="Ada Lovelace" role="Engineer" age="36" admin></div>
+      <div import="components/profile" name="Grace Hopper" role="Admiral" age="85"></div>
+      <div import="components/profile"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="section-title">Shared store</h2>
+    <div class="stack">
+      <div import="components/shop"></div>
+      <div import="components/cart"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="section-title">Local state</h2>
+    <div class="stack">
+      <div import="components/derived"></div>
+      <div import="components/lifecycle"></div>
+      <div import="components/counter"></div>
+      <div import="components/toggle"></div>
+      <div import="components/live-input"></div>
+      <div import="components/timer"></div>
+      <div import="components/tabs"></div>
+      <div import="components/todos"></div>
+    </div>
+  </section>
+</div>
+
+<div import="components/footer"></div>
+
+<style>
+  :global(*),
+  :global(*::before),
+  :global(*::after) {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+  :global(body) {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #f5f5f7;
+    color: #1a1a2e;
+  }
+  .page {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+  }
+  .section-title {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: #999;
+    margin-bottom: 14px;
+  }
+  .stack { display: flex; flex-direction: column; gap: 18px; }
+</style>

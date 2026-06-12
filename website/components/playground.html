@@ -1,0 +1,214 @@
+<section id="playground">
+  <h2 class="title">Playground — every demo runs the exact code shown</h2>
+
+  <div class="tabbar">
+    <button :class="tab === 'todos' ? 'tab on' : 'tab'" onclick="{show_todos}">Todos</button>
+    <button :class="tab === 'reactive' ? 'tab on' : 'tab'" onclick="{show_reactive}">Reactive $:</button>
+    <button :class="tab === 'lifecycle' ? 'tab on' : 'tab'" onclick="{show_lifecycle}">Lifecycle</button>
+    <button :class="tab === 'timer' ? 'tab on' : 'tab'" onclick="{show_timer}">Timer</button>
+    <button :class="tab === 'props' ? 'tab on' : 'tab'" onclick="{show_props}">Props</button>
+  </div>
+
+  <div class="panel" :hidden="tab !== 'todos'">
+    <div class="demo">
+      <p class="demo-tag">● live · bind:value, each loops with index, $: derived, add & remove</p>
+      <div import="components/demo-todos"></div>
+    </div>
+    <pre class="src" spark-ignore><span class="fname">components/demo-todos.html — exactly as it runs (style omitted)</span>
+&lt;input bind:value="draft" placeholder="Add a todo…" /&gt;
+&lt;button class="add" :disabled="!draft.trim()" onclick="{add}"&gt;Add&lt;/button&gt;
+
+&lt;ul&gt;
+  &lt;template each="todo, i in todos"&gt;
+    &lt;li&gt;
+      &lt;span&gt;{todo}&lt;/span&gt;
+      &lt;button class="x" onclick="{remove}" :data-i="i"&gt;✕&lt;/button&gt;
+    &lt;/li&gt;
+  &lt;/template&gt;
+&lt;/ul&gt;
+&lt;p class="meta"&gt;{summary}&lt;/p&gt;
+
+&lt;script&gt;
+  let todos = ['Ship it', 'Star the repo'];
+  let draft = '';
+
+  $: summary = todos.length + (todos.length === 1 ? ' item' : ' items');
+
+  function add() {
+    if (!draft.trim()) return;
+    todos = [...todos, draft.trim()];
+    draft = '';
+  }
+
+  function remove(event) {
+    const i = Number(event.target.dataset.i);
+    todos = todos.filter((_, idx) =&gt; idx !== i);
+  }
+&lt;/script&gt;</pre>
+  </div>
+  <div class="panel" :hidden="tab !== 'reactive'">
+    <div class="demo">
+      <p class="demo-tag">● live · derived values recompute on every change</p>
+      <div import="components/demo-reactive"></div>
+    </div>
+    <pre class="src" spark-ignore><span class="fname">components/demo-reactive.html — exactly as it runs (style omitted)</span>
+&lt;p class="readout"&gt;
+  {count} × 2 = &lt;b&gt;{doubled}&lt;/b&gt; — that's &lt;b&gt;{label}&lt;/b&gt;
+&lt;/p&gt;
+&lt;button class="add" onclick="{inc}"&gt;count++&lt;/button&gt;
+
+&lt;script&gt;
+  let count = 3;
+
+  $: doubled = count * 2;
+  $: label = doubled &gt; 10 ? 'big 🔥' : 'small';
+
+  function inc() { count++; }
+&lt;/script&gt;</pre>
+  </div>
+  <div class="panel" :hidden="tab !== 'lifecycle'">
+    <div class="demo">
+      <p class="demo-tag">● live · onMount with a cleanup hook</p>
+      <div import="components/demo-lifecycle"></div>
+    </div>
+    <pre class="src" spark-ignore><span class="fname">components/demo-lifecycle.html — exactly as it runs (style omitted)</span>
+&lt;p class="row"&gt;mounted at &lt;b&gt;{mountedAt}&lt;/b&gt;&lt;/p&gt;
+&lt;p class="row"&gt;alive for &lt;b&gt;{alive}s&lt;/b&gt;&lt;/p&gt;
+
+&lt;script&gt;
+  let mountedAt = '…';
+  let alive = 0;
+
+  onMount(() =&gt; {
+    mountedAt = new Date().toLocaleTimeString();
+    const handle = setInterval(() =&gt; { alive++; }, 1000);
+    return () =&gt; clearInterval(handle); // cleanup hook
+  });
+&lt;/script&gt;</pre>
+  </div>
+  <div class="panel" :hidden="tab !== 'timer'">
+    <div class="demo">
+      <p class="demo-tag">● live · async state via setInterval</p>
+      <div import="components/demo-timer"></div>
+    </div>
+    <pre class="src" spark-ignore><span class="fname">components/demo-timer.html — exactly as it runs (style omitted)</span>
+&lt;h3 class="clock"&gt;{seconds}s&lt;/h3&gt;
+&lt;button class="add" :disabled="running" onclick="{start}"&gt;Start&lt;/button&gt;
+&lt;button class="add" :disabled="!running" onclick="{stop}"&gt;Stop&lt;/button&gt;
+&lt;button class="ghost" onclick="{reset}"&gt;Reset&lt;/button&gt;
+
+&lt;script&gt;
+  let seconds = 0;
+  let running = false;
+  let handle = null;
+
+  function start() { running = true; handle = setInterval(() =&gt; { seconds++; }, 1000); }
+  function stop()  { running = false; clearInterval(handle); }
+  function reset() { stop(); seconds = 0; }
+&lt;/script&gt;</pre>
+  </div>
+  <div class="panel" :hidden="tab !== 'props'">
+    <div class="demo stack">
+      <p class="demo-tag">● live · export let + attribute coercion</p>
+      <div import="components/badge" label="Passed as attribute" tone="violet"></div>
+      <div import="components/badge" label="Numbers coerce" count="42" tone="gold"></div>
+      <div import="components/badge"></div>
+    </div>
+    <pre class="src" spark-ignore><span class="fname">usage + components/badge.html — exactly as it runs (style omitted)</span>
+&lt;div import="components/badge" label="Passed as attribute" tone="violet"&gt;&lt;/div&gt;
+&lt;div import="components/badge" label="Numbers coerce" count="42" tone="gold"&gt;&lt;/div&gt;
+&lt;div import="components/badge"&gt;&lt;/div&gt;
+
+&lt;div :class="'badge ' + tone"&gt;
+  &lt;strong&gt;{label}&lt;/strong&gt;
+  &lt;span class="count" :hidden="!count"&gt;{count}&lt;/span&gt;
+&lt;/div&gt;
+
+&lt;script&gt;
+  export let label = 'Default badge';
+  export let count = 0;
+  export let tone = 'plain';
+&lt;/script&gt;</pre>
+  </div>
+</section>
+
+<script>
+  let tab = 'todos';
+  function show_todos() { tab = 'todos'; }
+  function show_reactive() { tab = 'reactive'; }
+  function show_lifecycle() { tab = 'lifecycle'; }
+  function show_timer() { tab = 'timer'; }
+  function show_props() { tab = 'props'; }
+</script>
+
+<style>
+  section {
+    max-width: 1040px;
+    margin: 0 auto;
+    padding: 70px 32px;
+    border-top: 1px solid var(--border);
+  }
+  .title {
+    font-size: 13px;
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: .15em;
+    color: var(--muted);
+    margin-bottom: 26px;
+  }
+  .tabbar { display: flex; gap: 6px; margin-bottom: 18px; flex-wrap: wrap; }
+  .tab {
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 8px 18px;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .tab.on {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+    color: var(--text);
+    box-shadow: 0 0 18px -6px var(--accent);
+  }
+  .panel { display: grid; grid-template-columns: 1fr 1.15fr; gap: 18px; }
+  .panel[hidden] { display: none; }
+  .demo {
+    background: var(--surface);
+    border: 1px solid var(--accent-dim);
+    border-radius: var(--radius);
+    padding: 22px;
+    box-shadow: 0 0 40px -22px var(--accent);
+  }
+  .demo.stack { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+  .demo-tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--spark);
+    margin-bottom: 14px;
+  }
+  .src {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.65;
+    color: #c5c2d6;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .fname {
+    display: block;
+    color: var(--muted);
+    font-size: 10.5px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+    margin-bottom: 10px;
+  }
+  @media (max-width: 820px) { .panel { grid-template-columns: 1fr; } }
+</style>

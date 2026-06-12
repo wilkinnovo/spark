@@ -1,0 +1,257 @@
+<div class="layout">
+  <aside>
+    <p class="aside-title">Documentation</p>
+    <a href="#concept">The concept</a>
+    <a href="#install">Installation</a>
+    <a href="#components">Components</a>
+    <a href="#syntax">Template syntax</a>
+    <a href="#reactive">Reactivity &amp; lifecycle</a>
+    <a href="#props">Props</a>
+    <a href="#stores">Stores</a>
+    <a href="#api">JavaScript API</a>
+    <a href="#vite">Vite plugin</a>
+    <a href="#how">How it works</a>
+    <a href="#limits">Limitations</a>
+  </aside>
+
+  <main>
+    <h1>Spark documentation</h1>
+    <p class="intro">Everything you need to build with Spark — single-file HTML components with reactivity, props, and shared stores. No compiler, no virtual DOM.</p>
+
+    <h2 id="concept">The concept</h2>
+    <p>Most modern frameworks place a toolchain between you and the browser: code is compiled from an invented dialect, UI updates flow through a virtual representation of the DOM, and shipping requires a build pipeline. Each layer adds power — and adds something to install, learn, debug, and keep upgraded.</p>
+    <p>Spark inverts the trade. A component is a plain HTML file the browser receives unmodified. State is ordinary variables; reactivity comes from intercepting assignments, not from re-rendering and diffing a copy of your UI. The runtime patches the real DOM directly and is small enough to read in one sitting. The result: no build step to maintain, nothing proprietary in your source, a mental model that is just HTML plus JavaScript, and components that stay readable in view-source forever.</p>
+    <p>This is a deliberate scope, not a missing roadmap — Spark targets the very large class of sites and apps that need interactivity, components, and shared state without a compiler's ceiling of complexity.</p>
+
+    <h2 id="install">Installation</h2>
+    <pre spark-ignore>npm install spark-html</pre>
+    <p>Spark is a runtime library plus an optional Vite plugin. There is no compile step — component files are fetched and booted in the browser.</p>
+
+    <h2 id="components">Components</h2>
+    <p>A component is a plain <code>.html</code> file containing markup, an optional <code>&lt;script&gt;</code>, and an optional <code>&lt;style&gt;</code>:</p>
+    <pre spark-ignore>&lt;!-- components/welcome.html --&gt;
+&lt;h1&gt;Welcome {name}&lt;/h1&gt;
+
+&lt;script&gt;
+  let name = 'John Doe';
+&lt;/script&gt;
+
+&lt;style&gt;
+  h1 { color: rebeccapurple; }
+&lt;/style&gt;</pre>
+    <p>Use it anywhere with an import placeholder. The path resolves relative to the served root; the <code>.html</code> extension is optional:</p>
+    <pre spark-ignore>&lt;div import="components/welcome"&gt;&lt;/div&gt;</pre>
+    <p>Every top-level <code>let</code>, <code>const</code>, <code>var</code>, and <code>function</code> in the script becomes reactive component state. Assigning to a variable re-patches the component's DOM — that's the whole reactivity model.</p>
+    <p>Styles are automatically scoped to the component. Use <code>:global(selector)</code> to opt out for resets and page-level rules.</p>
+
+    <h2 id="syntax">Template syntax</h2>
+    <table>
+      <tr><th>Feature</th><th>Syntax</th></tr>
+      <tr><td>Text binding</td><td><code>&lt;p&gt;Hello {name}&lt;/p&gt;</code></td></tr>
+      <tr><td>Expressions</td><td><code>{price * qty}</code> &nbsp; <code>{ok ? 'yes' : 'no'}</code></td></tr>
+      <tr><td>Events</td><td><code>&lt;button onclick={add}&gt;</code> — handler receives the DOM event</td></tr>
+      <tr><td>Dynamic attributes</td><td><code>&lt;button :disabled="count &gt;= 10"&gt;</code> — booleans toggle, others set</td></tr>
+      <tr><td>Attribute interpolation</td><td><code>&lt;input value="{draft}"&gt;</code></td></tr>
+      <tr><td>Loops</td><td><code>&lt;template each="todo in todos"&gt;…&lt;/template&gt;</code></td></tr>
+      <tr><td>Loops with index</td><td><code>&lt;template each="todo, i in todos"&gt;…&lt;/template&gt;</code></td></tr>
+      <tr><td>Conditional display</td><td><code>&lt;div :hidden="!show"&gt;</code></td></tr>
+      <tr><td>Dynamic class</td><td><code>&lt;li :class="done ? 'item done' : 'item'"&gt;</code></td></tr>
+      <tr><td>Two-way binding</td><td><code>&lt;input bind:value="draft"&gt;</code> &nbsp; <code>&lt;input type="checkbox" bind:checked="done"&gt;</code></td></tr>
+      <tr><td>Conditional blocks</td><td><code>&lt;template if="show"&gt;…&lt;/template&gt;</code> — nodes enter/leave the DOM</td></tr>
+      <tr><td>Escape hatch</td><td><code>&lt;pre spark-ignore&gt;</code> — subtree is never patched; literal <code>{braces}</code> survive</td></tr>
+    </table>
+    <p class="note">Loops live on <code>&lt;template&gt;</code> so they're valid HTML anywhere — including inside <code>&lt;ul&gt;</code> and <code>&lt;table&gt;</code>. To update a list, replace the array: <code>todos = [...todos, item]</code>.</p>
+
+    <h2 id="reactive">Reactive statements &amp; lifecycle</h2>
+    <p>Derive values with <code>$:</code> — they re-run automatically whenever component state changes:</p>
+    <pre spark-ignore>&lt;p&gt;{count} doubled is {doubled} — that's {label}&lt;/p&gt;
+
+&lt;script&gt;
+  let count = 3;
+  $: doubled = count * 2;
+  $: label = doubled &gt; 8 ? 'big' : 'small';
+&lt;/script&gt;</pre>
+    <p>Run code after the component is in the DOM with the <code>onMount</code> builtin. Return a function to register a cleanup hook:</p>
+    <pre spark-ignore>&lt;script&gt;
+  let data = [];
+  onMount(async () =&gt; {
+    data = await fetch('/api/items').then(r =&gt; r.json());
+    return () =&gt; console.log('cleanup');
+  });
+&lt;/script&gt;</pre>
+
+    <h2 id="props">Props</h2>
+    <p>Declare props with <code>export let</code>. The value after <code>=</code> is the default:</p>
+    <pre spark-ignore>&lt;!-- components/profile.html --&gt;
+&lt;h2&gt;{name}{admin ? ' · admin' : ''}&lt;/h2&gt;
+
+&lt;script&gt;
+  export let name = 'Anonymous';
+  export let age = 0;
+  export let admin = false;
+&lt;/script&gt;</pre>
+    <p>Pass props as attributes on the import placeholder:</p>
+    <pre spark-ignore>&lt;div import="components/profile" name="Ada Lovelace" age="36" admin&gt;&lt;/div&gt;</pre>
+    <p>Attribute values are coerced: <code>"36"</code> becomes the number <code>36</code>, <code>"true"</code>/<code>"false"</code> become booleans, a bare attribute becomes <code>true</code>, and valid JSON (<code>items='["a","b"]'</code>) is parsed. Anything else stays a string.</p>
+    <p class="note">Variables declared with plain <code>let</code> are private — attributes cannot override them. <code>class</code> and <code>id</code> on the placeholder keep their normal HTML meaning and are copied to the component's host element instead of becoming props.</p>
+
+    <h2 id="stores">Stores</h2>
+    <p>Stores are named, shared, reactive objects — the way separate components talk to each other. Create them in app code before mounting:</p>
+    <pre spark-ignore>// main.js
+import { mount, store } from 'spark-html';
+
+store('cart', { items: [], total: 0 });
+mount();</pre>
+    <p>Subscribe from any component with the <code>useStore</code> builtin (available in every component script, no import needed):</p>
+    <pre spark-ignore>&lt;p&gt;{cart.items.length} items — ${cart.total}&lt;/p&gt;
+
+&lt;script&gt;
+  const cart = useStore('cart');
+
+  function add(item, price) {
+    cart.items = [...cart.items, item];
+    cart.total = cart.total + price;
+  }
+&lt;/script&gt;</pre>
+    <p>Every property assignment on a store re-patches all subscribed components. Subscriptions are cleaned up automatically for components no longer in the DOM.</p>
+
+    <h2 id="api">JavaScript API</h2>
+    <table>
+      <tr><th>Export</th><th>Description</th></tr>
+      <tr><td><code>mount(root?)</code></td><td>Resolve imports and boot all components. <code>root</code> is a selector or element; defaults to <code>document.body</code>. Returns a promise.</td></tr>
+      <tr><td><code>store(name, initial?)</code></td><td>Create (or retrieve) a named store. Returns the reactive store object.</td></tr>
+      <tr><td><code>component(name, source)</code></td><td>Register a component from a source string instead of a file. <code>&lt;div import="name"&gt;</code> then resolves to it — useful for tests and inline components.</td></tr>
+      <tr><td><code>parseSFC(source)</code></td><td>Split component source into <code>{ markup, script, style }</code>.</td></tr>
+      <tr><td><code>evaluate(expr, scope)</code> / <code>interpolate(tpl, scope)</code></td><td>The low-level expression engine, exported for testing.</td></tr>
+    </table>
+    <p>Inside component scripts, the builtins <code>useStore(name)</code> and <code>props</code> (the raw props object) are always in scope.</p>
+
+    <h2 id="vite">Vite plugin</h2>
+    <pre spark-ignore>// vite.config.js
+import { defineConfig } from 'vite';
+import spark from 'spark-html/vite';
+
+export default defineConfig({
+  plugins: [spark()],          // options: { componentsDir: 'components' }
+});</pre>
+    <p>The plugin serves component fragments raw (so Vite doesn't inject HMR scripts into them) and triggers a full page reload whenever a component file changes. Spark itself has no hard Vite dependency — any static file server works.</p>
+
+    <h2 id="how">How it works</h2>
+    <p><strong>1 — Text-level parsing.</strong> When a component is fetched, <code>&lt;script&gt;</code> and <code>&lt;style&gt;</code> are extracted from the raw text <em>before</em> the markup ever touches <code>innerHTML</code>. Browsers neuter script tags injected via <code>innerHTML</code>, so DOM-based extraction is unreliable by design — Spark sidesteps the whole class of bugs.</p>
+    <p><strong>2 — Proxy scopes.</strong> The script's top-level declarations are collected, the declarations are rewritten to bare assignments, and the code runs inside <code>with(proxy)</code>. Every assignment hits the proxy's set trap, which re-patches that component's subtree. Window built-ins like <code>name</code> or <code>status</code> can't shadow your state — the scope only claims identifiers your script declared.</p>
+    <p><strong>3 — In-place patching.</strong> Text nodes and attributes cache their original template on first visit, then diff against the interpolated result on every patch. Loop clones are re-rendered from a cached template per item. No virtual DOM, no reconciliation — just direct, scoped writes.</p>
+
+    <h2 id="limits">Limitations</h2>
+    <p>Spark trades completeness for simplicity. Know the edges:</p>
+    <table>
+      <tr><th>Limit</th><th>Detail</th></tr>
+      <tr><td>One scope per component</td><td>All top-level declarations share the component scope; there is no module system inside component scripts.</td></tr>
+      <tr><td>Block scoping</td><td><code>let</code>/<code>const</code> with a simple identifier inside functions hoist to component scope. Destructuring declarations are untouched and stay local.</td></tr>
+      <tr><td>Array updates</td><td>Replace arrays (<code>todos = [...todos, x]</code>) rather than mutating in place — index assignments don't trigger the proxy.</td></tr>
+      <tr><td>Loop snapshots</td><td>Loop bodies render from item snapshots; use data attributes + handlers on the component scope to mutate.</td></tr>
+      <tr><td>Coarse store updates</td><td>Store writes re-patch all subscribers. Patching is cheap, but there's no per-key dependency tracking.</td></tr>
+    </table>
+  </main>
+</div>
+
+<style>
+  .layout {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 48px 32px 90px;
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 48px;
+    align-items: start;
+  }
+  aside {
+    position: sticky;
+    top: 90px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .aside-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+  aside a {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 14px;
+    padding: 6px 10px;
+    border-radius: 7px;
+    transition: all .12s;
+  }
+  aside a:hover { color: var(--text); background: var(--surface); }
+  main { min-width: 0; }
+  h1 { font-size: 36px; letter-spacing: -0.02em; margin-bottom: 10px; }
+  .intro { color: var(--muted); font-size: 16px; max-width: 560px; }
+  h2 {
+    font-size: 21px;
+    margin: 48px 0 14px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+    letter-spacing: -0.01em;
+    scroll-margin-top: 90px;
+  }
+  p { margin: 10px 0; font-size: 15px; color: #c9c7d8; max-width: 640px; }
+  p strong { color: var(--text); }
+  .note {
+    border-left: 3px solid var(--spark);
+    background: var(--surface);
+    padding: 12px 16px;
+    border-radius: 0 8px 8px 0;
+    font-size: 14px;
+  }
+  code {
+    font-family: var(--mono);
+    font-size: 13px;
+    background: var(--surface-2);
+    padding: 2px 7px;
+    border-radius: 5px;
+    color: var(--spark);
+  }
+  pre {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.7;
+    color: #c5c2d6;
+    overflow-x: auto;
+    margin: 14px 0;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 14px;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--muted);
+    font-weight: 500;
+  }
+  td:first-child { white-space: nowrap; color: var(--text); }
+  td code { white-space: nowrap; }
+  @media (max-width: 800px) {
+    .layout { grid-template-columns: 1fr; }
+    aside { position: static; flex-direction: row; flex-wrap: wrap; gap: 8px; }
+  }
+</style>

@@ -1,0 +1,33 @@
+<div :class="'badge ' + tone">
+  <strong>{label}</strong>
+  <span class="count" :hidden="!count">{count}</span>
+</div>
+
+<script>
+  export let label = 'Default badge';
+  export let count = 0;
+  export let tone = 'plain';
+</script>
+
+<style>
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    font-size: 14px;
+  }
+  .badge.violet { border-color: var(--accent); background: var(--accent-dim); }
+  .badge.gold { border-color: var(--spark); background: #2e2810; }
+  .count {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: var(--bg);
+    padding: 2px 9px;
+    border-radius: 99px;
+    color: var(--spark);
+  }
+</style>
