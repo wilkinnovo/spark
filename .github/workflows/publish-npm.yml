@@ -1,4 +1,4 @@
-name: Publish spark to npm
+name: Publish spark-html to npm
 
 on:
   push:
