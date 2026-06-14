@@ -1,4 +1,9 @@
-# ⚡ Spark monorepo
+<p align="center">
+  <img width="782" height="327" alt="spark" src="https://github.com/user-attachments/assets/7e16dcd3-ed48-4479-b436-ed86bc0e72c7" />
+</p>
+
+
+# ⚡ Spark
 
 ```
 spark-monorepo/
