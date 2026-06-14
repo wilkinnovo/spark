@@ -1,14 +1,14 @@
-name: Publish spark-html to npm
+name: Publish spark to npm
 
 on:
   push:
     tags:
-      - 'v*'          # e.g. git tag v0.3.0 && git push --tags
+      - 'v*' # e.g. git tag v0.3.0 && git push --tags
   workflow_dispatch:
 
 permissions:
   contents: read
-  id-token: write     # npm provenance
+  id-token: write # npm provenance
 
 jobs:
   publish:
