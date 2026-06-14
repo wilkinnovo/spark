@@ -1,6 +1,6 @@
 {
   "name": "spark",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "Get your spark back. HTML that reacts!.",
   "type": "module",
   "main": "./src/index.js",
