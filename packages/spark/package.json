@@ -13,7 +13,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/wilkinnovo/spark-monorepo.git"
+    "url": "git+https://github.com/wilkinnovo/spark.git"
   },
   "keywords": [
     "reactive",
