@@ -1,6 +1,6 @@
 {
   "name": "spark-html",
-  "version": "0.12.0",
+  "version": "0.12.3",
   "description": "Get your spark back. HTML that reacts!.",
   "type": "module",
   "main": "./src/index.js",
