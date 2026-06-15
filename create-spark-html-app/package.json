@@ -1,0 +1,33 @@
+{
+  "name": "create-spark-html-app",
+  "version": "0.1.0",
+  "description": "Scaffold a Vite + spark-html app with a live reactive welcome screen.",
+  "type": "module",
+  "bin": {
+    "create-spark-html-app": "bin/index.js"
+  },
+  "files": [
+    "bin",
+    "template"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wilkinnovo/spark.git",
+    "directory": "packages/create-spark-html-app"
+  },
+  "keywords": [
+    "spark",
+    "spark-html",
+    "create",
+    "scaffold",
+    "cli",
+    "vite",
+    "reactive",
+    "html",
+    "no-build"
+  ],
+  "license": "MIT"
+}

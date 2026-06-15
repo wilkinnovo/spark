@@ -1,0 +1,41 @@
+<div import="components/welcome"></div>
+
+<style>
+  /* Resets and page-level rules use :global to escape component scoping. */
+  :global(*),
+  :global(*::before),
+  :global(*::after) {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+  :global(:root) {
+    --bg: #0c0c11;
+    --surface: #14141c;
+    --surface-2: #1b1b26;
+    --border: #26263a;
+    --text: #e8e6f0;
+    --muted: #8b89a0;
+    --accent: #8b7cff;
+    --accent-dim: #2a2545;
+    --spark: #ffd24a;
+    --radius: 14px;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  }
+  :global(body) {
+    min-height: 100vh;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--text);
+    line-height: 1.6;
+    background:
+      radial-gradient(ellipse 70% 50% at 50% -10%, rgba(139, 124, 255, 0.16), transparent),
+      linear-gradient(rgba(139, 124, 255, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(139, 124, 255, 0.035) 1px, transparent 1px),
+      var(--bg);
+    background-size: 100% 100%, 44px 44px, 44px 44px, 100% 100%;
+  }
+  :global(::selection) {
+    background: var(--accent);
+    color: #0c0c11;
+  }
+</style>
