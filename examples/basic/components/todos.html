@@ -10,17 +10,26 @@
   <ul class="todos">
     <template each="todo, i in todos">
       <li class="todo">
-        <span>{i + 1}. {todo}</span>
+        <template if="editing === i">
+          <input class="edit" bind:value="editDraft"
+                 onkeydown="{onEditKey}" onblur="{saveEdit}" />
+        </template>
+        <template if="editing !== i">
+          <span class="text" onclick="{startEdit}" :data-index="i">{i + 1}. {todo}</span>
+        </template>
         <button class="remove" onclick="{removeAt}" :data-index="i">✕</button>
       </li>
     </template>
   </ul>
   <p class="empty" :hidden="todos.length > 0">Nothing here. Add your first todo above.</p>
+  <p class="hint">Click a todo to edit it, then press Enter or click away.</p>
 </div>
 
 <script>
   let todos = ['Buy groceries', 'Walk the dog', 'Read a book'];
   let input = '';
+  let editing = -1;     // index of the todo being edited, or -1
+  let editDraft = '';
   $: remaining = todos.length + (todos.length === 1 ? ' item' : ' items');
 
   function addTodo() {
@@ -35,6 +44,22 @@
   function reset() {
     todos = [];
     input = '';
+  }
+  function startEdit(event) {
+    const i = Number(event.target.dataset.index);
+    editing = i;
+    editDraft = todos[i];
+  }
+  function saveEdit() {
+    if (editing < 0) return;
+    const i = editing;
+    const text = editDraft.trim();
+    if (text) todos = todos.map((t, idx) => (idx === i ? text : t));
+    editing = -1;
+  }
+  function onEditKey(event) {
+    if (event.key === 'Enter') saveEdit();
+    if (event.key === 'Escape') editing = -1;
   }
 </script>
 
@@ -77,6 +102,18 @@
     border-bottom: 1px solid #eee;
   }
   .todo:last-child { border-bottom: none; }
+  .todo .text { cursor: pointer; flex: 1; }
+  .todo .text:hover { color: #5b4ff7; }
+  .todo .edit {
+    flex: 1;
+    padding: 4px 8px;
+    border: 1px solid #5b4ff7;
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  .todo .edit:focus { outline: none; box-shadow: 0 0 0 3px #eceaff; }
+  .hint { font-size: 12px; color: #aaa; margin-top: 10px; }
   .remove {
     padding: 2px 8px;
     font-size: 11px;

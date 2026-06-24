@@ -93,6 +93,7 @@
   $: doubled = count * 2;
   $: label = doubled &gt; 8 ? 'big' : 'small';
 &lt;/script&gt;</pre>
+    <p class="note">A <code>$:</code> statement can span multiple lines — a ternary, a chained call, or a callback broken across lines all work.</p>
     <p>Run code after the component is in the DOM with the <code>onMount</code> builtin. Return a function to register a cleanup hook — it runs when the component leaves the DOM (removed by an <code>if</code>/<code>each</code> block, or via <code>unmount()</code>):</p>
     <pre spark-ignore>&lt;script&gt;
   let data = [];

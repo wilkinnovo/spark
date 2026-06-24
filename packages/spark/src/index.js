@@ -395,6 +395,112 @@ function reactify(value, onMutate, cache) {
   return proxy;
 }
 
+// ─── `$:` extraction (multi-line aware) ───────────────────────────────
+// `$: x = a + b` is a reactive statement: pulled out of the script and re-run
+// after every state change. We have no real JS parser (that's the point), so
+// we scan character-by-character, skipping strings/comments and tracking
+// bracket depth, to find where each `$:` statement actually ends. That lets a
+// statement span lines when it's inside brackets, ends on an operator, or the
+// next line begins with one — i.e. ASI-lite, matching how people write:
+//   $: visible = tab === 'all'
+//     ? items
+//     : items.filter((i) => i.on);
+const OPEN = '([{';
+const CLOSE = ')]}';
+// operators that, at a line's end OR a line's start, mean "this continues".
+const CONT_END = new Set(['+','-','*','/','%','&','|','^','<','>','=','?',':','.',',']);
+const CONT_START = new Set(['+','-','*','/','%','&','|','^','<','>','=','?',':','.',',','(','[','`']);
+
+// Advance past a string/template literal starting at `i`; returns the index
+// just after its closing quote. Handles escapes and `${…}` interpolation.
+function skipString(src, i) {
+  const q = src[i++];
+  while (i < src.length) {
+    const c = src[i];
+    if (c === '\\') { i += 2; continue; }
+    if (c === q) return i + 1;
+    if (q === '`' && c === '$' && src[i + 1] === '{') {
+      i += 2;
+      let d = 1;
+      while (i < src.length && d > 0) {
+        const k = src[i];
+        if (k === '\\') { i += 2; continue; }
+        if (k === '"' || k === "'" || k === '`') { i = skipString(src, i); continue; }
+        if (k === '{') d++;
+        else if (k === '}') d--;
+        i++;
+      }
+      continue;
+    }
+    if (q !== '`' && c === '\n') return i; // unterminated normal string — bail
+    i++;
+  }
+  return i;
+}
+
+// Find the end index of a `$:` statement whose body begins at `start`.
+function reactiveStatementEnd(src, start) {
+  let i = start;
+  let depth = 0;
+  while (i < src.length) {
+    const c = src[i];
+    if (c === '"' || c === "'" || c === '`') { i = skipString(src, i); continue; }
+    if (c === '/' && src[i + 1] === '/') { while (i < src.length && src[i] !== '\n') i++; continue; }
+    if (c === '/' && src[i + 1] === '*') { i += 2; while (i < src.length && !(src[i] === '*' && src[i + 1] === '/')) i++; i += 2; continue; }
+    if (OPEN.includes(c)) { depth++; i++; continue; }
+    if (CLOSE.includes(c)) { if (depth === 0) return i; depth--; i++; continue; }
+    if (depth === 0) {
+      if (c === ';') return i;
+      if (c === '\n') {
+        const before = src.slice(start, i).replace(/\s+$/, '');
+        const last = before[before.length - 1];
+        if (last && CONT_END.has(last)) { i++; continue; }
+        let k = i + 1;
+        while (k < src.length && /[ \t\r]/.test(src[k])) k++;
+        if (src[k] === '\n') { i++; continue; } // blank line — keep scanning
+        const next = src[k];
+        // ".method" chains, "? :" ternaries, binary operators on the next line
+        if (next && CONT_START.has(next)) { i++; continue; }
+        return i;
+      }
+    }
+    i++;
+  }
+  return i;
+}
+
+// Pull every `$:` statement out of the script, returning the cleaned code
+// (reactive spans blanked to newlines so line numbers stay put) and the list
+// of statements to re-run on each change.
+function extractReactiveStatements(src) {
+  const reactiveStmts = [];
+  let out = '';
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i];
+    if (c === '"' || c === "'" || c === '`') { const j = skipString(src, i); out += src.slice(i, j); i = j; continue; }
+    if (c === '/' && src[i + 1] === '/') { const s = i; while (i < src.length && src[i] !== '\n') i++; out += src.slice(s, i); continue; }
+    if (c === '/' && src[i + 1] === '*') { const s = i; i += 2; while (i < src.length && !(src[i] === '*' && src[i + 1] === '/')) i++; i += 2; out += src.slice(s, i); continue; }
+    if (c === '$' && src[i + 1] === ':') {
+      // Only at a statement boundary: start of script, or after ; { } newline.
+      let j = out.length - 1;
+      while (j >= 0 && (out[j] === ' ' || out[j] === '\t')) j--;
+      const prev = j < 0 ? '\n' : out[j];
+      if (prev === '\n' || prev === ';' || prev === '{' || prev === '}') {
+        const end = reactiveStatementEnd(src, i + 2);
+        const stmt = src.slice(i + 2, end).trim().replace(/;\s*$/, '');
+        if (stmt) reactiveStmts.push(stmt);
+        out += src.slice(i, end).replace(/[^\n]/g, ''); // keep newlines only
+        i = end;
+        continue;
+      }
+    }
+    out += c;
+    i++;
+  }
+  return { code: out, reactiveStmts };
+}
+
 // ─── Reactive scope ────────────────────────────────────────────────────
 function makeScope(rawCode, componentEl, props = {}) {
   // Normalize line endings + strip comments so the declaration regexes
@@ -410,13 +516,11 @@ function makeScope(rawCode, componentEl, props = {}) {
       return `${before}${space}${kw} ${name}`;
     },
   );
-  // `$: doubled = count * 2;` — reactive statements.
-  // Extracted here, re-run after every state change before patching.
-  const reactiveStmts = [];
-  code = code.replace(/(^|[\n;{}])(\s*)\$:\s*([^\n]+)/g, (_, before, space, stmt) => {
-    reactiveStmts.push(stmt.trim().replace(/;\s*$/, ''));
-    return `${before}${space}`;
-  });
+  // `$: doubled = count * 2;` — reactive statements. Extracted here (multi-line
+  // aware), re-run after every state change before patching.
+  const extracted = extractReactiveStatements(code);
+  code = extracted.code;
+  const reactiveStmts = extracted.reactiveStmts;
 
   const codeNoComments = code
     .replace(/\/\*[\s\S]*?\*\//g, '')
