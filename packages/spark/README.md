@@ -4,6 +4,15 @@ Single-file HTML components with built-in reactivity. No compiler, no virtual DO
 
 ## Install
 
+Scaffold a ready-to-run app (Vite + plugin + live welcome screen):
+
+```bash
+npx create-spark-html-app yourapp
+cd yourapp && npm install && npm run dev
+```
+
+Or add Spark to an existing project:
+
 ```bash
 npm install spark-html
 ```
@@ -63,6 +72,7 @@ The plugin serves component fragments raw and full-reloads when they change.
 | Attribute interp    | `<input value="{input}">`                        |
 | Loops               | `<template each="todo in todos">…</template>`    |
 | Loops with index    | `<template each="todo, i in todos">…</template>` |
+| Keyed loops         | `<template each="row in rows" key="row.id">…`    |
 | Scoped styles       | `<style>` auto-scoped to the component           |
 | Global styles       | `:global(body) { … }` escapes scoping            |
 | Two-way binding     | `<input bind:value="draft">` / `bind:checked`     |
@@ -121,10 +131,11 @@ mount();
 ### JavaScript
 
 ```js
-import { mount, component, store } from 'spark-html';
+import { mount, unmount, component, store } from 'spark-html';
 
 await mount();          // whole document
 await mount('#app');    // a subtree
+unmount(el);            // run onMount cleanups + drop store subs, then remove el
 
 // register a component from a string (no file needed) — great for tests
 component('hello', `
@@ -138,12 +149,19 @@ component('hello', `
 1. `mount()` finds `<div import="...">` placeholders and fetches each file.
 2. Script and style are extracted from the raw text **before** the markup
    touches `innerHTML` (browsers strip script tags injected that way).
-3. The script runs inside a `Proxy` scope; every assignment re-patches
-   only that component's DOM.
+3. The script runs inside a `Proxy` scope; every assignment schedules a
+   patch of only that component's DOM. Patches are batched onto a single
+   microtask, so a burst of assignments costs one DOM update.
 4. Styles are auto-scoped via a `[name="component"]` prefix.
+5. Loops reconcile: each item keeps its DOM nodes across updates (matched
+   by index, or by `key`), so inputs inside loops keep focus.
+6. A cloak style hides components until they're booted and patched — no
+   flash of raw `{braces}` or unstyled markup on load.
 
 ## Limits
 
 - One reactive scope per component (top-level `let`/`function`)
 - Block-scoped `let/const` inside functions hoist to component scope
-- Loop bodies are read-only snapshots; replace the array to update
+- Replace arrays to update a list (`todos = [...todos, x]`); in-place index
+  assignment doesn't trip the proxy. Loops reconcile by index — add
+  `key="…"` for identity-stable reordering

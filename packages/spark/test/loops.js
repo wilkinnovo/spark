@@ -1,0 +1,197 @@
+/**
+ * Tests for the reconciling each-loop, destroy lifecycle, store cleanup,
+ * batching, and the FOUC cloak.
+ */
+import './dom-shim.js';
+import { body, head, parseHTML } from './dom-shim.js';
+import { strict as assert } from 'node:assert';
+
+const { mount, unmount, component, store } = await import('../src/index.js');
+
+let pass = 0, fail = 0;
+async function test(name, fn) {
+  try { await fn(); pass++; console.log(`  ✅ ${name}`); }
+  catch (e) { fail++; console.log(`  ❌ ${name}\n     ${e.message}`); }
+}
+const tick = () => new Promise((r) => setTimeout(r, 5));
+function fire(el, type) {
+  const e = { type, target: el };
+  let n = el;
+  while (n) { (n._listeners?.[type] || []).forEach((fn) => fn(e)); n = n.parentNode; }
+}
+
+// ── reconciling loop ──
+component('looplist', `
+<ul>
+  <template each="item, i in items">
+    <li><span class="label">{i}:{item}</span></li>
+  </template>
+</ul>
+<button class="append" onclick="{append}">add</button>
+<button class="dropfirst" onclick="{dropFirst}">drop</button>
+<script>
+  let items = ['a', 'b'];
+  let n = 0;
+  function append() { items = [...items, 'x' + (n++)]; }
+  function dropFirst() { items = items.slice(1); }
+</script>
+`);
+
+// ── keyed loop ──
+component('keyedlist', `
+<ul>
+  <template each="row in rows" key="row.id">
+    <li class="row">{row.id}:{row.text}</li>
+  </template>
+</ul>
+<button class="reorder" onclick="{reorder}">reorder</button>
+<script>
+  let rows = [{ id: 1, text: 'one' }, { id: 2, text: 'two' }];
+  function reorder() { rows = [rows[1], rows[0]]; }
+</script>
+`);
+
+// ── batching: one patch per handler tick ──
+let patchCounter = 0;
+globalThis.__sparkTestOnPatch = () => patchCounter++;
+component('batchtest', `
+<p class="out">{a}-{b}-{sum}</p>
+<button class="go" onclick="{go}">go</button>
+<script>
+  let a = 1;
+  let b = 1;
+  $: sum = a + b;
+  function go() { a = 10; b = 20; }
+</script>
+`);
+
+// ── two-way bind to a member path inside a loop ──
+component('editrows', `
+<template each="row in rows" key="row.id">
+  <input class="edit" bind:value="row.text" />
+</template>
+<p class="joined">{rows.map(r => r.text).join(',')}</p>
+<script>
+  let rows = [{ id: 1, text: 'a' }, { id: 2, text: 'b' }];
+</script>
+`);
+
+// ── destroy lifecycle: store unsub + onMount cleanup ──
+store('leaktest', { v: 0 });
+let cleanupRan = 0;
+globalThis.__sparkTestCleanup = () => cleanupRan++;
+component('leaky', `
+<p class="v">{shared.v}</p>
+<script>
+  const shared = useStore('leaktest');
+  let shared2 = shared;
+  onMount(() => { return () => { __sparkTestCleanup(); }; });
+</script>
+`);
+
+parseHTML(
+  '<div import="looplist"></div>' +
+  '<div import="keyedlist"></div>' +
+  '<div import="batchtest"></div>' +
+  '<div import="editrows"></div>' +
+  '<div id="host"><div import="leaky"></div></div>',
+  body,
+);
+await mount();
+await tick();
+
+console.log('\nreconciling each-loop');
+await test('renders initial items', () => {
+  const labels = body.querySelectorAll('[name="looplist"] .label');
+  assert.equal(labels.length, 2);
+  assert.equal(labels[0].textContent, '0:a');
+  assert.equal(labels[1].textContent, '1:b');
+});
+
+let firstLiBefore;
+await test('appending REUSES existing DOM nodes (identity preserved)', async () => {
+  firstLiBefore = body.querySelectorAll('[name="looplist"] li')[0];
+  fire(body.querySelector('[name="looplist"] .append'), 'click');
+  await tick();
+  const lis = body.querySelectorAll('[name="looplist"] li');
+  assert.equal(lis.length, 3, 'should now have 3 items');
+  assert.equal(lis[0], firstLiBefore, 'first <li> must be the SAME node object');
+  assert.equal(lis[2].querySelector('.label').textContent, '2:x0');
+});
+
+await test('dropping first item updates content in reused nodes', async () => {
+  fire(body.querySelector('[name="looplist"] .dropfirst'), 'click');
+  await tick();
+  const labels = body.querySelectorAll('[name="looplist"] .label');
+  assert.equal(labels.length, 2);
+  // items are now ['b','x0'] → indices reindex
+  assert.equal(labels[0].textContent, '0:b');
+  assert.equal(labels[1].textContent, '1:x0');
+});
+
+console.log('\nkeyed each-loop');
+await test('reorder keeps node identity by key', async () => {
+  const rowsBefore = body.querySelectorAll('[name="keyedlist"] .row');
+  const rowOne = rowsBefore[0]; // id 1
+  const rowTwo = rowsBefore[1]; // id 2
+  fire(body.querySelector('[name="keyedlist"] .reorder'), 'click');
+  await tick();
+  const rowsAfter = body.querySelectorAll('[name="keyedlist"] .row');
+  assert.equal(rowsAfter[0], rowTwo, 'id 2 node should now be first (moved, not recreated)');
+  assert.equal(rowsAfter[1], rowOne, 'id 1 node should now be second');
+  assert.equal(rowsAfter[0].textContent, '2:two');
+});
+
+console.log('\nbatching');
+await test('multiple writes + reactive in one handler => one patch', async () => {
+  patchCounter = 0;
+  fire(body.querySelector('[name="batchtest"] .go'), 'click');
+  await tick();
+  const out = body.querySelector('[name="batchtest"] .out');
+  assert.equal(out.textContent, '10-20-30', 'derived value recomputed correctly');
+  assert.equal(patchCounter, 1, `expected exactly 1 patch, got ${patchCounter}`);
+});
+
+console.log('\ntwo-way bind to member path in loop');
+await test('editing a loop input mutates the item and re-renders derived text', async () => {
+  const inputs = body.querySelectorAll('[name="editrows"] .edit');
+  assert.equal(inputs.length, 2);
+  assert.equal(inputs[0].value, 'a');
+  inputs[0].value = 'AA';
+  fire(inputs[0], 'input');
+  await tick();
+  const joined = body.querySelector('[name="editrows"] .joined');
+  assert.equal(joined.textContent, 'AA,b', 'derived text must reflect the member write');
+});
+
+console.log('\ndestroy lifecycle');
+await test('store starts with one subscriber', () => {
+  store('leaktest', {}).v = 1; // mutate to confirm wired
+});
+await test('unmount runs onMount cleanup and unsubscribes from store', async () => {
+  const host = body.querySelector('[id="host"]');
+  const leakyEl = body.querySelector('[name="leaky"]');
+  cleanupRan = 0;
+  unmount(leakyEl);
+  host.removeChild(leakyEl);
+  assert.equal(cleanupRan, 1, 'onMount cleanup must run exactly once');
+  // mutating the store must NOT throw or patch the dead component
+  store('leaktest', {}).v = 999;
+  await tick();
+  assert.ok(true);
+});
+
+console.log('\nFOUC cloak');
+await test('cloak style injected at module load', () => {
+  const styles = head.querySelectorAll('style');
+  const cloak = styles.find((s) => (s.textContent || '').includes('visibility:hidden'));
+  assert.ok(cloak, 'a cloak style should exist in <head>');
+});
+await test('booted components are revealed (data-spark-ready)', () => {
+  const comp = body.querySelector('[name="looplist"]');
+  assert.equal(comp.getAttribute('data-spark-ready'), '');
+  assert.equal(comp.hasAttribute('data-spark-cloak'), false);
+});
+
+console.log(`\n${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

@@ -63,6 +63,29 @@ function isEmptyDir(dir) {
   return entries.length === 0;
 }
 
+// Resolve the newest published version of a package from the npm registry,
+// so a freshly scaffolded app always starts on the latest spark-html.
+// Returns a caret range (e.g. "^0.13.2"), or null if the lookup fails
+// (offline, registry down) — callers fall back to the template default.
+async function latestRange(pkgName) {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4000);
+    const registry = (process.env.npm_config_registry || 'https://registry.npmjs.org')
+      .replace(/\/+$/, '');
+    const res = await fetch(`${registry}/${pkgName}/latest`, {
+      signal: ctrl.signal,
+      headers: { accept: 'application/json' },
+    });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const { version } = await res.json();
+    return version ? `^${version}` : null;
+  } catch {
+    return null;
+  }
+}
+
 async function prompt(question, fallback) {
   const rl = createInterface({ input: stdin, output: stdout });
   try {
@@ -115,10 +138,17 @@ async function main() {
     if (existsSync(src)) renameSync(src, join(targetDir, to));
   }
 
-  // 4 ─ stamp the project name into package.json ───────────────────────
+  // 4 ─ stamp the project name + pin the latest spark-html ─────────────
   const pkgPath = join(targetDir, 'package.json');
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
   pkg.name = projectName;
+  // Always start on the newest published spark-html. If the registry can't
+  // be reached, the template's "latest" default still resolves on install.
+  const range = await latestRange('spark-html');
+  if (range && pkg.dependencies && pkg.dependencies['spark-html']) {
+    pkg.dependencies['spark-html'] = range;
+    stdout.write(`${c.dim(`   using spark-html ${range}`)}\n`);
+  }
   writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
 
   // 5 ─ celebrate + print next steps ───────────────────────────────────

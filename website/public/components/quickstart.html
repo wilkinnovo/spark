@@ -1,5 +1,14 @@
 <section id="quickstart">
   <h2 class="title">Get started in 60 seconds</h2>
+
+  <div class="scaffold">
+    <h3>Fastest start — scaffold a ready-to-run app</h3>
+    <pre spark-ignore>npx create-spark-html-app yourapp</pre>
+    <p>Sets up Vite, the Spark plugin, and a live reactive welcome screen. Then <code>cd yourapp &amp;&amp; npm install &amp;&amp; npm run dev</code>.</p>
+  </div>
+
+  <p class="or">or wire it up by hand:</p>
+
   <div class="steps">
     <div class="step">
       <span class="n">1</span>
@@ -51,6 +60,32 @@ mount();</pre>
     letter-spacing: .15em;
     color: var(--muted);
     margin-bottom: 34px;
+  }
+  .scaffold {
+    background: var(--accent-dim);
+    border: 1px solid var(--accent);
+    border-radius: 12px;
+    padding: 20px 22px;
+    margin-bottom: 22px;
+  }
+  .scaffold h3 { font-size: 15px; margin: 0 0 12px; color: var(--text); }
+  .scaffold pre { background: var(--bg); }
+  .scaffold p { font-size: 13px; color: var(--muted); margin: 12px 0 0; }
+  .scaffold code {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: var(--bg);
+    padding: 2px 6px;
+    border-radius: 5px;
+    color: var(--text);
+  }
+  .or {
+    font-family: var(--mono);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    color: var(--muted);
+    margin-bottom: 22px;
   }
   .steps { display: flex; flex-direction: column; gap: 26px; }
   .step { display: flex; gap: 18px; }

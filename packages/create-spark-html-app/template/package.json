@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "spark-html": "^0.12.0"
+    "spark-html": "latest"
   },
   "devDependencies": {
     "vite": "^5.0.0"

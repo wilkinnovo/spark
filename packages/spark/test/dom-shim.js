@@ -6,6 +6,11 @@ export class TextNode {
   cloneNode() { return new TextNode(this.textContent); }
   remove() { if (this.parentNode) this.parentNode.removeChild(this); }
   after(node) { Element.prototype.after.call(this, node); }
+  get nextSibling() {
+    if (!this.parentNode) return null;
+    const i = this.parentNode.childNodes.indexOf(this);
+    return this.parentNode.childNodes[i + 1] || null;
+  }
 }
 
 export class Element {
@@ -62,6 +67,16 @@ export class Element {
   }
   get firstChild() { return this.childNodes[0] || null; }
   get firstElementChild() { return this.childNodes.find((n) => n.nodeType === 1) || null; }
+  get nextSibling() {
+    if (!this.parentNode) return null;
+    const i = this.parentNode.childNodes.indexOf(this);
+    return this.parentNode.childNodes[i + 1] || null;
+  }
+  get previousSibling() {
+    if (!this.parentNode) return null;
+    const i = this.parentNode.childNodes.indexOf(this);
+    return i > 0 ? this.parentNode.childNodes[i - 1] : null;
+  }
   get isConnected() {
     let n = this;
     while (n.parentNode) n = n.parentNode;

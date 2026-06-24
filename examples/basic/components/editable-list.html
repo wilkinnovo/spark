@@ -1,0 +1,88 @@
+<div class="card">
+  <h2>Editable list</h2>
+  <p class="hint">
+    A <code>bind:value</code> input <em>inside</em> a keyed loop. Loops now
+    reconcile, so rows keep their DOM nodes — type freely and focus never jumps.
+  </p>
+
+  <ul class="rows">
+    <template each="row, i in rows" key="row.id">
+      <li class="row">
+        <span class="num">{i + 1}</span>
+        <input bind:value="row.text" placeholder="Edit me…" />
+        <button class="up" onclick="{moveUp}" :data-id="row.id" :disabled="i === 0">↑</button>
+        <button class="del" onclick="{remove}" :data-id="row.id">✕</button>
+      </li>
+    </template>
+  </ul>
+
+  <div class="add">
+    <input bind:value="draft" placeholder="New item" onkeydown="{onKey}" />
+    <button :disabled="!draft.trim()" onclick="{add}">Add</button>
+  </div>
+
+  <p class="preview">{rows.map(r => r.text).join(' · ')}</p>
+</div>
+
+<script>
+  let nextId = 3;
+  let draft = '';
+  let rows = [
+    { id: 1, text: 'Reconciled rows keep focus' },
+    { id: 2, text: 'Reorder by key, not by index' },
+  ];
+
+  function add() {
+    if (!draft.trim()) return;
+    rows = [...rows, { id: nextId++, text: draft.trim() }];
+    draft = '';
+  }
+  function onKey(event) {
+    if (event.key === 'Enter') add();
+  }
+  function remove(event) {
+    const id = Number(event.target.dataset.id);
+    rows = rows.filter((r) => r.id !== id);
+  }
+  function moveUp(event) {
+    const id = Number(event.target.dataset.id);
+    const i = rows.findIndex((r) => r.id === id);
+    if (i <= 0) return;
+    const next = [...rows];
+    [next[i - 1], next[i]] = [next[i], next[i - 1]];
+    rows = next;
+  }
+</script>
+
+<style>
+  .card { background: white; border: 1px solid #e0e0e0; border-radius: 10px; padding: 20px; }
+  h2 { margin-bottom: 6px; }
+  .hint { font-size: 13px; color: #888; margin-bottom: 16px; }
+  .hint code { background: #f0eeff; color: #5b4ff7; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .rows { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .num {
+    width: 22px; height: 22px; flex: none;
+    display: grid; place-items: center;
+    background: #f0eeff; color: #5b4ff7;
+    border-radius: 6px; font-size: 12px; font-weight: 600;
+  }
+  input {
+    flex: 1; min-width: 0;
+    padding: 7px 11px;
+    border: 1px solid #ddd; border-radius: 7px;
+    font-size: 14px; font-family: inherit;
+  }
+  input:focus { outline: none; border-color: #5b4ff7; box-shadow: 0 0 0 3px #eceaff; }
+  button {
+    padding: 7px 12px;
+    border: 1px solid #ddd; border-radius: 7px;
+    background: #fafafa; font-size: 13px; cursor: pointer; font-family: inherit;
+    transition: background .12s;
+  }
+  button:hover { background: #f0eeff; border-color: #5b4ff7; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .del { color: #c0392b; }
+  .add { display: flex; gap: 8px; margin-top: 14px; }
+  .preview { margin-top: 12px; font-size: 12px; color: #aaa; }
+</style>

@@ -48,6 +48,13 @@ npm test           # 17 tests, pure node, no browser
 
 ## Use in any project
 
+Scaffold a fresh app in one command:
+
+```bash
+npx create-spark-html-app yourapp
+cd yourapp && npm install && npm run dev
+```
+
 The package is publish-ready. From this repo you can also link it locally:
 
 ```bash

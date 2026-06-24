@@ -24,6 +24,9 @@
     <p>This is a deliberate scope, not a missing roadmap — Spark targets the very large class of sites and apps that need interactivity, components, and shared state without a compiler's ceiling of complexity.</p>
 
     <h2 id="install">Installation</h2>
+    <p>Scaffold a complete, ready-to-run app (Vite + the Spark plugin + a live welcome screen) in one command:</p>
+    <pre spark-ignore>npx create-spark-html-app yourapp</pre>
+    <p>Then <code>cd yourapp &amp;&amp; npm install &amp;&amp; npm run dev</code>. Or add Spark to an existing project:</p>
     <pre spark-ignore>npm install spark-html</pre>
     <p>Spark is a runtime library plus an optional Vite plugin. There is no compile step — component files are fetched and booted in the browser.</p>
 
@@ -54,13 +57,14 @@
       <tr><td>Attribute interpolation</td><td><code>&lt;input value="{draft}"&gt;</code></td></tr>
       <tr><td>Loops</td><td><code>&lt;template each="todo in todos"&gt;…&lt;/template&gt;</code></td></tr>
       <tr><td>Loops with index</td><td><code>&lt;template each="todo, i in todos"&gt;…&lt;/template&gt;</code></td></tr>
+      <tr><td>Keyed loops</td><td><code>&lt;template each="row in rows" key="row.id"&gt;…&lt;/template&gt;</code> — reuse nodes by identity across reorders</td></tr>
       <tr><td>Conditional display</td><td><code>&lt;div :hidden="!show"&gt;</code></td></tr>
       <tr><td>Dynamic class</td><td><code>&lt;li :class="done ? 'item done' : 'item'"&gt;</code></td></tr>
       <tr><td>Two-way binding</td><td><code>&lt;input bind:value="draft"&gt;</code> &nbsp; <code>&lt;input type="checkbox" bind:checked="done"&gt;</code></td></tr>
       <tr><td>Conditional blocks</td><td><code>&lt;template if="show"&gt;…&lt;/template&gt;</code> — nodes enter/leave the DOM</td></tr>
       <tr><td>Escape hatch</td><td><code>&lt;pre spark-ignore&gt;</code> — subtree is never patched; literal <code>{braces}</code> survive</td></tr>
     </table>
-    <p class="note">Loops live on <code>&lt;template&gt;</code> so they're valid HTML anywhere — including inside <code>&lt;ul&gt;</code> and <code>&lt;table&gt;</code>. To update a list, replace the array: <code>todos = [...todos, item]</code>.</p>
+    <p class="note">Loops live on <code>&lt;template&gt;</code> so they're valid HTML anywhere — including inside <code>&lt;ul&gt;</code> and <code>&lt;table&gt;</code>. To update a list, replace the array: <code>todos = [...todos, item]</code>. Loops <strong>reconcile</strong> rather than rebuild — existing rows keep their DOM nodes (and focus, scroll, and CSS transitions) across updates, so you can safely place a <code>bind:value</code> input inside a loop. Add <code>key="…"</code> when items reorder, to reuse nodes by identity.</p>
 
     <h2 id="reactive">Reactive statements &amp; lifecycle</h2>
     <p>Derive values with <code>$:</code> — they re-run automatically whenever component state changes:</p>
@@ -71,14 +75,16 @@
   $: doubled = count * 2;
   $: label = doubled &gt; 8 ? 'big' : 'small';
 &lt;/script&gt;</pre>
-    <p>Run code after the component is in the DOM with the <code>onMount</code> builtin. Return a function to register a cleanup hook:</p>
+    <p>Run code after the component is in the DOM with the <code>onMount</code> builtin. Return a function to register a cleanup hook — it runs when the component leaves the DOM (removed by an <code>if</code>/<code>each</code> block, or via <code>unmount()</code>):</p>
     <pre spark-ignore>&lt;script&gt;
   let data = [];
   onMount(async () =&gt; {
+    const id = setInterval(tick, 1000);
     data = await fetch('/api/items').then(r =&gt; r.json());
-    return () =&gt; console.log('cleanup');
+    return () =&gt; clearInterval(id);   // cleanup on unmount
   });
 &lt;/script&gt;</pre>
+    <p class="note">Updates are <strong>batched</strong>: several assignments in one event handler (and all <code>$:</code> recomputations) collapse into a single DOM patch on the next microtask, so a handler that touches ten variables still patches once.</p>
 
     <h2 id="props">Props</h2>
     <p>Declare props with <code>export let</code>. The value after <code>=</code> is the default:</p>
@@ -119,6 +125,7 @@ mount();</pre>
     <table>
       <tr><th>Export</th><th>Description</th></tr>
       <tr><td><code>mount(root?)</code></td><td>Resolve imports and boot all components. <code>root</code> is a selector or element; defaults to <code>document.body</code>. Returns a promise.</td></tr>
+      <tr><td><code>unmount(el)</code></td><td>Tear down a mounted subtree: run its <code>onMount</code> cleanups and drop its store subscriptions. Call before removing a component you mounted imperatively.</td></tr>
       <tr><td><code>store(name, initial?)</code></td><td>Create (or retrieve) a named store. Returns the reactive store object.</td></tr>
       <tr><td><code>component(name, source)</code></td><td>Register a component from a source string instead of a file. <code>&lt;div import="name"&gt;</code> then resolves to it — useful for tests and inline components.</td></tr>
       <tr><td><code>parseSFC(source)</code></td><td>Split component source into <code>{ markup, script, style }</code>.</td></tr>
@@ -139,7 +146,8 @@ export default defineConfig({
     <h2 id="how">How it works</h2>
     <p><strong>1 — Text-level parsing.</strong> When a component is fetched, <code>&lt;script&gt;</code> and <code>&lt;style&gt;</code> are extracted from the raw text <em>before</em> the markup ever touches <code>innerHTML</code>. Browsers neuter script tags injected via <code>innerHTML</code>, so DOM-based extraction is unreliable by design — Spark sidesteps the whole class of bugs.</p>
     <p><strong>2 — Proxy scopes.</strong> The script's top-level declarations are collected, the declarations are rewritten to bare assignments, and the code runs inside <code>with(proxy)</code>. Every assignment hits the proxy's set trap, which re-patches that component's subtree. Window built-ins like <code>name</code> or <code>status</code> can't shadow your state — the scope only claims identifiers your script declared.</p>
-    <p><strong>3 — In-place patching.</strong> Text nodes and attributes cache their original template on first visit, then diff against the interpolated result on every patch. Loop clones are re-rendered from a cached template per item. No virtual DOM, no reconciliation — just direct, scoped writes.</p>
+    <p><strong>3 — In-place patching.</strong> Text nodes and attributes cache their original template on first visit, then diff against the interpolated result on every patch. Loops keep one block of nodes per item and reconcile them — reusing nodes in place (by index, or by <code>key</code> when given), creating only what's new and removing only what's gone. No virtual DOM and no full-tree diff — just direct, scoped writes against the real nodes, batched onto a single microtask flush.</p>
+    <p><strong>4 — No flash on load.</strong> A cloak style hides Spark-managed elements until each component is booted, styled, and patched — so the raw <code>{braces}</code> and unstyled markup never flash before the runtime catches up.</p>
 
     <h2 id="limits">Limitations</h2>
     <p>Spark trades completeness for simplicity. Know the edges:</p>
@@ -148,7 +156,7 @@ export default defineConfig({
       <tr><td>One scope per component</td><td>All top-level declarations share the component scope; there is no module system inside component scripts.</td></tr>
       <tr><td>Block scoping</td><td><code>let</code>/<code>const</code> with a simple identifier inside functions hoist to component scope. Destructuring declarations are untouched and stay local.</td></tr>
       <tr><td>Array updates</td><td>Replace arrays (<code>todos = [...todos, x]</code>) rather than mutating in place — index assignments don't trigger the proxy.</td></tr>
-      <tr><td>Loop snapshots</td><td>Loop bodies render from item snapshots; use data attributes + handlers on the component scope to mutate.</td></tr>
+      <tr><td>Loop reconciliation</td><td>Reuse is positional by default; reordering a list without a <code>key</code> keeps nodes in place and rewrites their contents. Add <code>key="…"</code> for identity-stable moves.</td></tr>
       <tr><td>Coarse store updates</td><td>Store writes re-patch all subscribers. Patching is cheap, but there's no per-key dependency tracking.</td></tr>
     </table>
   </main>

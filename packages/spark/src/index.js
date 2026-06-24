@@ -20,11 +20,42 @@
 
 
 // ─── Expression evaluation ─────────────────────────────────────────────
+// Compiling `new Function(...)` is the single most expensive thing the
+// runtime does, and the same expressions are evaluated on every patch.
+// Compile each unique source string once and cache the resulting function;
+// the generated function closes over nothing but its arguments, so caching
+// is safe and slashes both CPU cost and CSP `unsafe-eval` churn.
+const exprCache = new Map();
+function compileExpr(code) {
+  let fn = exprCache.get(code);
+  if (fn === undefined) {
+    try {
+      fn = new Function('__scope__', `with(__scope__) { return (${code}) }`);
+    } catch {
+      fn = () => '';
+    }
+    exprCache.set(code, fn);
+  }
+  return fn;
+}
+
+const stmtCache = new Map();
+function compileStmt(code) {
+  let fn = stmtCache.get(code);
+  if (fn === undefined) {
+    try {
+      fn = new Function('__scope__', 'event', '__val__', `with(__scope__) { ${code} }`);
+    } catch {
+      fn = () => {};
+    }
+    stmtCache.set(code, fn);
+  }
+  return fn;
+}
+
 function evaluate(code, scope) {
   try {
-    return new Function('__scope__', `with(__scope__) { return (${code}) }`)(
-      scope,
-    );
+    return compileExpr(code)(scope);
   } catch {
     return '';
   }
@@ -36,11 +67,7 @@ function execute(code, scope, event = null, __val__ = undefined) {
     // proxy writes (which would trigger a re-patch mid-click) and no
     // reliance on the deprecated window.event (absent in Firefox).
     // `__val__` carries the element value for two-way bindings.
-    new Function('__scope__', 'event', '__val__', `with(__scope__) { ${code} }`)(
-      scope,
-      event,
-      __val__,
-    );
+    compileStmt(code)(scope, event, __val__);
   } catch (e) {
     console.warn(`[spark] Error in "${code}":`, e.message);
   }
@@ -78,6 +105,37 @@ function parseSFC(source) {
   return { markup: markup.trim(), script: script.trim(), style: style.trim() };
 }
 
+// ─── FOUC cloak ────────────────────────────────────────────────────────
+// Without this, there's a visible flash on load: import placeholders swap
+// in their markup with raw `{interpolation}` braces showing, and component
+// <style> blocks are injected only after boot — so users briefly see
+// unstyled content with literal braces. We inject a style at MODULE LOAD
+// (before any component renders) that hides Spark-managed subtrees, then
+// reveal each one the frame after it's booted and patched.
+//
+// We deliberately scope the cloak to `[import]` placeholders and hosts we
+// tag with `data-spark-cloak` — never a bare `[name]`, which would also
+// hide ordinary <input name="…"> fields.
+let cloakInjected = false;
+function injectCloak() {
+  if (cloakInjected) return;
+  if (typeof document === 'undefined' || !document.head) return;
+  cloakInjected = true;
+  const s = document.createElement('style');
+  s.setAttribute('data-spark-cloak', '');
+  s.textContent =
+    '[import]:not([data-spark-ready]),[data-spark-cloak]:not([data-spark-ready]){visibility:hidden!important}';
+  document.head.appendChild(s);
+}
+injectCloak();
+
+function reveal(el) {
+  if (el && el.setAttribute) {
+    el.setAttribute('data-spark-ready', '');
+    el.removeAttribute('data-spark-cloak');
+  }
+}
+
 // ─── Import resolution ─────────────────────────────────────────────────
 async function resolveImports(root) {
   const nodes = [...root.querySelectorAll('[import]')];
@@ -97,6 +155,9 @@ async function resolveImports(root) {
         // the host, so classes/ids on it are preserved.
         const host = document.createElement('div');
         host.setAttribute('name', compName);
+        // Cloak until booted+patched so the raw markup (with {braces}) and
+        // not-yet-injected styles never flash. reveal() clears this.
+        host.setAttribute('data-spark-cloak', '');
         // Placeholder attributes become PROPS (except import/class/id,
         // which keep their normal HTML meaning and are carried over).
         const props = {};
@@ -171,15 +232,25 @@ function store(name, initial) {
 }
 
 // Subscribe a component element to a store; returns the store proxy.
+// The subscriber is tracked on the element so destroyComponent() can remove
+// it — otherwise the closure (and the whole component scope it captures)
+// would live in the store's Set forever, leaking on every unmount.
 function subscribeStore(name, componentEl, scopeRef) {
-  const entry = stores.get(name);
+  let entry = stores.get(name);
   if (!entry) {
     console.warn(`[spark] useStore("${name}") — store not created. Call store("${name}", initial) before mount().`);
-    return store(name, {});
+    store(name, {});
+    entry = stores.get(name);
   }
-  entry.subscribers.add(() => {
-    if (scopeRef.scope && componentEl.isConnected) patch(componentEl, scopeRef.scope);
-  });
+  const cb = () => {
+    if (!scopeRef.scope || !componentEl.isConnected) return;
+    // Route through the component's batching scheduler when available so a
+    // burst of store writes collapses into a single patch.
+    if (componentEl.__sparkSchedule) componentEl.__sparkSchedule();
+    else patch(componentEl, scopeRef.scope);
+  };
+  entry.subscribers.add(cb);
+  (componentEl.__sparkStoreUnsubs ||= []).push(() => entry.subscribers.delete(cb));
   return entry.proxy;
 }
 
@@ -272,14 +343,19 @@ function makeScope(rawCode, componentEl, props = {}) {
         return true;
       }
       target[key] = value;
-      runReactive();
-      patch(componentEl, scope);
+      // Don't patch synchronously per assignment: a single handler often
+      // makes several writes, and each `$:` statement is itself an
+      // assignment. Coalesce them into ONE patch on the microtask queue.
+      // (`inReactive` writes are already inside a flush — no need to
+      // reschedule; the in-progress flush will patch once at the end.)
+      if (ready && !inReactive) schedule();
       return true;
     },
   });
 
   scopeRef.scope = scope;
   componentEl.__sparkOnMount = mountCallbacks;
+  componentEl.__sparkSchedule = schedule;
 
   // Re-run `$:` statements. Guarded so a reactive assignment doesn't
   // recurse into another full reactive pass; the patch after the outer
@@ -292,7 +368,7 @@ function makeScope(rawCode, componentEl, props = {}) {
     try {
       for (const stmt of reactiveStmts) {
         try {
-          new Function('__scope__', `with(__scope__) { ${stmt} }`)(scope);
+          compileStmt(stmt)(scope);
         } catch (e) {
           console.warn(`[spark] Error in "$: ${stmt}":`, e.message);
         }
@@ -300,6 +376,21 @@ function makeScope(rawCode, componentEl, props = {}) {
     } finally {
       inReactive = false;
     }
+  }
+
+  // Microtask-batched flush: recompute reactive statements once, then patch
+  // once, no matter how many writes happened this tick.
+  let scheduled = false;
+  function flush() {
+    scheduled = false;
+    if (!componentEl.isConnected) return;
+    runReactive();
+    patch(componentEl, scope);
+  }
+  function schedule() {
+    if (scheduled) return;
+    scheduled = true;
+    queueMicrotask(flush);
   }
 
   try {
@@ -325,6 +416,23 @@ function makeScope(rawCode, componentEl, props = {}) {
 // ─── DOM patching ──────────────────────────────────────────────────────
 function patch(el, scope) {
   walkNode(el, scope, true);
+  // Optional observation seam (used by the test suite to assert batching).
+  // No-op in normal use — nothing sets this hook in the browser.
+  if (typeof globalThis !== 'undefined' && globalThis.__sparkTestOnPatch) {
+    globalThis.__sparkTestOnPatch(el);
+  }
+}
+
+// Request a batched re-render of the component that owns `el`. Used after
+// two-way binds: `bind:value="row.text"` is a member write, which mutates
+// the object directly without tripping the scope proxy's set trap, so we
+// have to ask the owning component to re-patch explicitly.
+function scheduleRerender(el) {
+  let n = el;
+  while (n) {
+    if (n.__sparkSchedule) return n.__sparkSchedule();
+    n = n.parentNode;
+  }
 }
 
 function walkNode(node, scope, isRoot = false) {
@@ -355,11 +463,13 @@ function walkNode(node, scope, isRoot = false) {
   patchElement(node, scope);
 
   for (const child of [...node.childNodes]) {
-    // A child may have been detached by patchEach earlier in this loop
-    // (stale loop clones). Walking it with this scope would evaluate
-    // loop bindings against the wrong scope and corrupt attributes —
-    // and event.target may still reference that node.
+    // A child may have been detached during this loop; skip stragglers.
     if (child.parentNode !== node) continue;
+    // Nodes rendered by a sibling each/if are "managed" by that block and
+    // get walked with the correct loop/branch scope there. Walking them
+    // here with the parent scope would evaluate loop bindings against the
+    // wrong scope and blank out interpolations.
+    if (child.__sparkManaged) continue;
     walkNode(child, scope);
   }
 }
@@ -397,15 +507,17 @@ function patchIf(el, scope) {
     let insertAfter = el;
     el.__sparkIfTemplate.forEach((tpl) => {
       const clone = tpl.cloneNode(true);
+      clone.__sparkManaged = true; // owned by this if-block, not the parent walk
       insertAfter.after(clone);
       insertAfter = clone;
       el.__sparkIfRendered.push(clone);
       walkNode(clone, scope, false);
     });
   } else if (!show && isShown) {
-    el.__sparkIfRendered.forEach(
-      (n) => n.parentNode && n.parentNode.removeChild(n),
-    );
+    el.__sparkIfRendered.forEach((n) => {
+      destroyComponent(n); // run cleanups for any nested components
+      if (n.parentNode) n.parentNode.removeChild(n);
+    });
     el.__sparkIfRendered = [];
   } else if (show && isShown) {
     // keep contents fresh
@@ -416,6 +528,16 @@ function patchIf(el, scope) {
 }
 
 // ─── each="item in array" loops ───────────────────────────────────────
+// Reconciling, not rebuilding. The old implementation removed every clone
+// and recreated it on every patch — which fires on every keystroke — so an
+// <input> inside a loop could never hold focus and long lists thrashed the
+// DOM. We now keep one "block" of nodes per item and REUSE it across
+// patches: blocks are matched by key (default: index), reused in place
+// (no move when already correct, so focus survives), created for new items,
+// and destroyed for removed ones.
+//
+// Optional explicit key for identity-stable reconciliation across reorders:
+//   <template each="todo in todos" key="todo.id"> … </template>
 function patchEach(el, scope) {
   if (!el.__sparkEachParsed) {
     const expr = el.getAttribute('each').trim();
@@ -428,6 +550,9 @@ function patchEach(el, scope) {
     el.__sparkEachVar = match[1];
     el.__sparkEachIndexVar = match[2] || null;
     el.__sparkEachArrayExpr = match[3].trim();
+    el.__sparkEachKeyExpr = el.getAttribute('key')
+      ? el.getAttribute('key').trim()
+      : null;
 
     if (el.tagName.toLowerCase() === 'template') {
       el.__sparkEachTemplate = [...el.content.childNodes].map((n) =>
@@ -440,12 +565,14 @@ function patchEach(el, scope) {
       el.innerHTML = '';
     }
     el.__sparkEachParsed = true;
+    el.__sparkEachBlocks = []; // [{ key, nodes: [] }]
   }
 
   const {
     __sparkEachVar: varName,
     __sparkEachIndexVar: idxName,
     __sparkEachArrayExpr: arrayExpr,
+    __sparkEachKeyExpr: keyExpr,
     __sparkEachTemplate: templateNodes,
   } = el;
 
@@ -455,16 +582,8 @@ function patchEach(el, scope) {
   const arr = evaluate(arrayExpr, scope);
   if (!Array.isArray(arr)) return;
 
-  if (el.__sparkEachRendered) {
-    el.__sparkEachRendered.forEach(
-      (n) => n.parentNode && n.parentNode.removeChild(n),
-    );
-  }
-  el.__sparkEachRendered = [];
-
-  let insertAfter = el;
-  arr.forEach((item, i) => {
-    const loopScope = new Proxy(scope, {
+  const makeLoopScope = (item, i) =>
+    new Proxy(scope, {
       get(t, k) {
         if (k === varName) return item;
         if (idxName && k === idxName) return i;
@@ -474,20 +593,77 @@ function patchEach(el, scope) {
       has(t, k) {
         return k === varName || (idxName && k === idxName) || k in t;
       },
+      set(t, k, v) {
+        // Never let an assignment clobber the loop variable/index on the
+        // shared parent scope; everything else writes through normally.
+        if (k === varName || (idxName && k === idxName)) return true;
+        t[k] = v;
+        return true;
+      },
     });
 
-    templateNodes.forEach((tpl) => {
-      const clone = tpl.cloneNode(true);
-      insertAfter.after(clone);
-      insertAfter = clone;
-      el.__sparkEachRendered.push(clone);
-      walkNode(clone, loopScope, false);
-    });
+  const keyOf = (item, i, loopScope) =>
+    keyExpr ? evaluate(keyExpr, loopScope) : i;
+
+  const oldBlocks = el.__sparkEachBlocks || [];
+  const oldByKey = new Map();
+  for (const b of oldBlocks) oldByKey.set(b.key, b);
+
+  const newBlocks = [];
+  let insertAfter = el;
+
+  arr.forEach((item, i) => {
+    const loopScope = makeLoopScope(item, i);
+    const key = keyOf(item, i, loopScope);
+    let block = oldByKey.get(key);
+
+    if (block) {
+      oldByKey.delete(key);
+      // Reuse the existing nodes — only move them if they're not already in
+      // the right spot, so a focused input is left untouched.
+      let cursor = insertAfter;
+      for (const n of block.nodes) {
+        if (cursor.nextSibling !== n) cursor.after(n);
+        cursor = n;
+      }
+      for (const n of block.nodes) walkNode(n, loopScope, false);
+    } else {
+      const nodes = [];
+      let cursor = insertAfter;
+      for (const tpl of templateNodes) {
+        const clone = tpl.cloneNode(true);
+        clone.__sparkManaged = true; // owned by this loop, not the parent walk
+        cursor.after(clone);
+        cursor = clone;
+        nodes.push(clone);
+        walkNode(clone, loopScope, false);
+      }
+      block = { key, nodes };
+    }
+
+    newBlocks.push(block);
+    const last = block.nodes[block.nodes.length - 1];
+    if (last) insertAfter = last;
   });
+
+  // Anything left in oldByKey was dropped from the array — clean it up.
+  for (const b of oldByKey.values()) {
+    for (const n of b.nodes) {
+      destroyComponent(n);
+      if (n.parentNode) n.parentNode.removeChild(n);
+    }
+  }
+
+  el.__sparkEachBlocks = newBlocks;
 }
 
 // ─── Attribute / event bindings ───────────────────────────────────────
 function patchElement(el, scope) {
+  // Listeners are attached ONCE but a node may be re-walked with a different
+  // scope on every patch (loop clones are reused, not recreated). Stash the
+  // current scope on the node so the long-lived listener always reads the
+  // live one — never the scope captured at first render.
+  el.__sparkScopeRef = scope;
   for (const attr of [...el.attributes]) {
     const { name, value } = attr;
 
@@ -503,8 +679,10 @@ function patchElement(el, scope) {
         const eventName = prop === 'checked' ? 'change' : 'input';
         el.addEventListener(eventName, () => {
           // Simple identifiers and member paths both work:
-          // bind:value="draft" / bind:value="form.email"
-          execute(`${expr} = __val__`, scope, null, el[prop]);
+          // bind:value="draft" / bind:value="form.email" / bind:value="row.text"
+          execute(`${expr} = __val__`, el.__sparkScopeRef, null, el[prop]);
+          // Member writes don't trip the scope proxy, so re-render explicitly.
+          scheduleRerender(el);
         });
       }
       const current = evaluate(expr, scope);
@@ -529,7 +707,7 @@ function patchElement(el, scope) {
         el.__sparkEvents.add(name);
         const fnExpr = value.slice(1, -1).trim();
         el.addEventListener(name.slice(2), (e) => {
-          execute(`${fnExpr}(event)`, scope, e);
+          execute(`${fnExpr}(event)`, el.__sparkScopeRef, e);
         });
         el.removeAttribute(name);
       }
@@ -541,10 +719,7 @@ function patchElement(el, scope) {
       const realAttr = name.slice(1);
       let result;
       try {
-        result = new Function(
-          '__scope__',
-          `with(__scope__) { return (${value}) }`,
-        )(scope);
+        result = compileExpr(value)(scope);
       } catch {
         // Evaluation failed (e.g. a walker with the wrong scope reached a
         // loop clone). Leave the attribute untouched instead of blanking
@@ -563,8 +738,7 @@ function patchElement(el, scope) {
       continue;
     }
 
-    // value="{input}" interpolation in attributes
-    if (value === undefined) { console.log('UNDEF ATTR:', name, 'on', el.tagName, JSON.stringify([...(el._attrs?.entries?.()||[])])); }
+    // value="{input}" interpolation in attributes.
     // Interpolated attribute: value="{draft}". The template is cached on
     // first sight — the guard must check the CACHE, not the live value,
     // because after the first interpolation the live value has no braces
@@ -642,7 +816,38 @@ function bootComponent(el) {
       }
     });
     el.__sparkOnMount = [];
+    reveal(el); // booted, styled and patched — safe to show (no FOUC)
   });
+}
+
+// ─── Teardown ─────────────────────────────────────────────────────────
+// Run every component's onMount-returned cleanups and drop its store
+// subscriptions. Called when if/each removes a subtree, or directly via
+// unmount(). Without this, cleanups never ran and store subscribers
+// (which capture the whole component scope) leaked forever.
+function destroyComponent(node) {
+  if (!node || node.nodeType !== Node.ELEMENT_NODE) return;
+  const comps = [];
+  if (node.hasAttribute && node.hasAttribute('name')) comps.push(node);
+  if (node.querySelectorAll) comps.push(...node.querySelectorAll('[name]'));
+  for (const c of comps) {
+    (c.__sparkOnDestroy || []).forEach((fn) => {
+      try {
+        fn();
+      } catch (e) {
+        console.warn('[spark] onDestroy error:', e.message);
+      }
+    });
+    c.__sparkOnDestroy = [];
+    (c.__sparkStoreUnsubs || []).forEach((fn) => {
+      try {
+        fn();
+      } catch {
+        /* ignore */
+      }
+    });
+    c.__sparkStoreUnsubs = [];
+  }
 }
 
 // Prefix bare selectors with [name="comp"] for automatic scoping.
@@ -687,6 +892,12 @@ async function mount(root = document.body) {
     await resolveImports(root);
     root.querySelectorAll('[name]').forEach(bootComponent);
     if (root.hasAttribute && root.hasAttribute('name')) bootComponent(root);
+    // Safety net: anything still cloaked (e.g. a component whose script
+    // threw before the rAF reveal) is shown now, so a bug can never leave
+    // the page permanently invisible.
+    if (root.querySelectorAll) {
+      root.querySelectorAll('[data-spark-cloak]').forEach(reveal);
+    }
     console.log(
       `[spark] ⚡ ready — ${root.querySelectorAll('[name]').length} component(s)`,
     );
@@ -722,5 +933,17 @@ const _origFetchComponent = async (path) => {
   return fetch(path);
 };
 
-export { mount, component, store, evaluate, interpolate, parseSFC };
-export default { mount, component, store };
+/**
+ * Tear down a mounted subtree: runs onMount cleanups and unsubscribes its
+ * components from any stores. Call before removing a component you mounted
+ * imperatively, so timers/listeners/subscriptions don't leak.
+ *
+ *   import { unmount } from 'spark-html';
+ *   unmount(el); el.remove();
+ */
+function unmount(el) {
+  destroyComponent(el);
+}
+
+export { mount, unmount, component, store, evaluate, interpolate, parseSFC };
+export default { mount, unmount, component, store };
