@@ -1,12 +1,22 @@
 {
   "name": "spark-html",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "description": "Get your spark back. HTML that reacts!.",
   "type": "module",
   "main": "./src/index.js",
+  "types": "./src/index.d.ts",
   "exports": {
-    ".": "./src/index.js",
-    "./vite": "./src/vite.js"
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./vite": {
+      "types": "./src/vite.d.ts",
+      "default": "./src/vite.js"
+    },
+    "./globals": {
+      "types": "./src/globals.d.ts"
+    }
   },
   "files": [
     "src"
