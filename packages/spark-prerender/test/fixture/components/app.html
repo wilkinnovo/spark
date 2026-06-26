@@ -1,0 +1,23 @@
+<header><h1>{heading}</h1></header>
+<ul>
+  <template each="item in items">
+    <li class="todo">{item.label} — {item.done ? 'done' : 'todo'}</li>
+  </template>
+</ul>
+<p class="count">{items.length} tasks</p>
+<div import="components/footer"></div>
+
+<script>
+  let pageTitle = 'Sparksplash — prerendered';
+  let pageDescription = 'A statically prerendered Spark page.';
+  let heading = 'My Tasks';
+  let items = [
+    { label: 'Write parser', done: true },
+    { label: 'Ship prerender', done: false },
+  ];
+</script>
+
+<style>
+  h1 { color: rebeccapurple; }
+  @media (max-width: 600px) { h1 { font-size: 18px; } }
+</style>

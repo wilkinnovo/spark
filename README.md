@@ -8,10 +8,13 @@
 ```
 spark-monorepo/
 ├── packages/
-│   └── spark/              ← the publishable library (spark-html)
-│       ├── src/index.js    ← runtime: mount(), component(), reactivity
-│       ├── src/vite.js     ← vite plugin (spark-html/vite)
-│       └── test/           ← node test suite, no browser needed
+│   ├── spark/              ← the publishable library (spark-html)
+│   │   ├── src/index.js    ← runtime: mount(), component(), reactivity
+│   │   ├── src/vite.js     ← vite plugin (spark-html/vite)
+│   │   └── test/           ← node test suite, no browser needed
+│   └── spark-prerender/    ← build-time SEO prerender CLI (reuses the runtime)
+│       ├── src/prerender.js
+│       └── bin/cli.js      ← spark-prerender <page.html> …
 ├── examples/
 │   └── basic/              ← vite app consuming the package
 │       ├── index.html
@@ -86,3 +89,32 @@ mount();
 ```
 
 See `packages/spark/README.md` for the full template syntax reference.
+
+## Prerender for SEO (`spark-prerender`)
+
+Spark renders on the client, so a crawler that doesn't run JS sees empty
+placeholders. `spark-prerender` fixes that with **no rewrite, no SSR server,
+and no app-code changes** — it runs the *real* runtime against a server DOM,
+lets the tree settle, and writes back fully-rendered HTML (`{interpolations}`
+resolved, `each`/`if` and nested imports rendered, scoped styles inlined, and
+`<title>`/`<meta>` injected from component state).
+
+```bash
+# post-build step over your dist/ (multi-page = just list each page)
+npx spark-prerender dist/index.html dist/docs.html
+
+# or write copies elsewhere
+npx spark-prerender site/index.html --out build --root site
+```
+
+Page metadata needs no special API — declare it as component state:
+
+```html
+<script>
+  let pageTitle = 'Spark — HTML that reacts!';
+  let pageDescription = 'Single-file HTML components with built-in reactivity.';
+</script>
+```
+
+See `packages/spark-prerender/README.md` for options, the programmatic API,
+and the (honest) scope of what's captured.
