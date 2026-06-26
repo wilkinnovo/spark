@@ -68,18 +68,45 @@ defined wins, in DOM order) and writes them into `<head>`:
 own `meta` mapping to `prerender()` to customize. If no component declares a
 var, the entry HTML's existing `<head>` is left as-is.
 
-## Scope (v1 — Phase 1)
+## Dynamic data — the `load()` hook
 
-What it captures: everything from a component's **initial scope** —
-interpolations, `each`/`if`, nested imports, scoped styles, and metadata vars.
-This covers marketing, docs, and landing pages.
+For content that comes from an API, declare an async `load()` in the component
+script. The prerenderer calls it, **awaits** it, then re-renders — so the data
+lands in the static HTML. No `onMount`, no special import:
+
+```html
+<ul><template each="p in photos"><li>{p.title}</li></template></ul>
+
+<script>
+  let photos = [];
+  async function load() {
+    const res = await fetch('/api/photos');   // a DATA request, not a component
+    photos = await res.json();
+  }
+</script>
+```
+
+`fetch` calls to **components** (relative `*.html`) are read from disk;
+everything else (your data) is delegated to `options.fetch` if you pass one
+(point it at fixtures or a local API), otherwise the real global `fetch`:
+
+```js
+await prerender('dist/index.html', {
+  fetch: async (url) => fetch(new URL(url, 'http://localhost:3000')), // local API
+});
+```
+
+`load()` runs only at build time and only if declared — components without it
+do zero extra work, and the client still re-runs it normally in the browser.
+
+## Scope
+
+What it captures: a component's **initial scope** (interpolations, `each`/`if`,
+nested imports, scoped styles, metadata vars) **plus** async data via `load()`
+above. This covers marketing, docs, landing pages, and data-backed content.
 
 Honest limitations:
 
-- **Async/API data is not captured** by design — content loaded in `onMount`
-  from a `fetch`/store stays client-rendered (the crawler still gets the static
-  shell + real metadata, already a big SEO win). An awaitable data hook is the
-  planned Phase 2 — additive, no rework.
 - **Stores created in `main.js` are not present.** The entry's bootstrap
   `<script>` is not executed (linkedom doesn't run page scripts); the
   prerenderer calls `mount()` itself. Components that read a store render with

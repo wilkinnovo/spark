@@ -1,0 +1,18 @@
+<h2>{title}</h2>
+<ul class="photos">
+  <template each="p in photos">
+    <li class="photo">{p.title}</li>
+  </template>
+</ul>
+<p class="status">{photos.length ? photos.length + ' photos' : 'loading…'}</p>
+
+<script>
+  let pageTitle = 'Gallery — prerendered with data';
+  let title = 'Gallery';
+  let photos = [];
+  // Phase 2: the prerenderer awaits load() so API data lands in the HTML.
+  async function load() {
+    const res = await fetch('/api/photos');
+    photos = await res.json();
+  }
+</script>

@@ -13,10 +13,17 @@ import { readFile, access } from 'node:fs/promises';
 import { resolve, dirname, join } from 'node:path';
 import { parseHTML } from 'linkedom';
 
+// A component request is a relative `*.html` (the runtime always appends
+// `.html`); an absolute URL is a DATA request and is delegated elsewhere.
+function isComponentRequest(reqPath) {
+  const p = String(reqPath).split(/[?#]/)[0];
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(p)) return false; // http(s)://, etc.
+  return p.endsWith('.html');
+}
+
 // Spark fetches a component as `fetch("components/x.html")`; on the server we
-// read that from disk. Try each configured root, return the first that exists.
-async function readComponentFile(reqPath, roots) {
-  // Strip a query/hash and a leading slash; the runtime already appended .html.
+// read that from disk. Try each configured root; return its text, or null.
+async function tryReadComponentFile(reqPath, roots) {
   let rel = String(reqPath).split(/[?#]/)[0].replace(/^\/+/, '');
   for (const root of roots) {
     const file = join(root, rel);
@@ -27,12 +34,8 @@ async function readComponentFile(reqPath, roots) {
       /* try the next root */
     }
   }
-  const err = new Error(`component not found: ${rel} (looked in ${roots.join(', ')})`);
-  err.code = 'ENOENT';
-  throw err;
+  return null;
 }
-
-const exists = async (p) => { try { await access(p); return true; } catch { return false; } };
 
 // Run `fn` with `globalThis[k] = values[k]`, restoring the previous values
 // after — so prerendering many pages in one process doesn't leak globals.
@@ -116,6 +119,10 @@ function serialize(document) {
  *                                           `import="components/x"` against.
  * @param {Array} [options.meta]             Metadata mapping (see DEFAULT_META).
  * @param {number} [options.maxPasses]       Settle-loop safety cap (default 100).
+ * @param {Function} [options.fetch]         Fetch used for NON-component (data)
+ *                                           requests a `load()` hook makes —
+ *                                           point it at fixtures or a local API.
+ *                                           Defaults to the real global fetch.
  * @returns {Promise<string>} the prerendered HTML.
  */
 export async function prerender(entryPath, options = {}) {
@@ -129,6 +136,8 @@ export async function prerender(entryPath, options = {}) {
   ]).filter((v, i, a) => a.indexOf(v) === i);
   const metaMap = options.meta || DEFAULT_META;
   const maxPasses = options.maxPasses ?? 100;
+  // For data requests a load() hook makes (not component files).
+  const dataFetch = options.fetch || globalThis.fetch;
 
   const source = await readFile(entryAbs, 'utf8');
   const { window, document } = parseHTML(source);
@@ -145,15 +154,22 @@ export async function prerender(entryPath, options = {}) {
     return q.length;
   };
 
-  // ── Disk-backed fetch for components; track in-flight reads so the settle
-  //    loop knows when the import tree has fully resolved.
+  // ── fetch override. Component imports (relative *.html) are read from disk;
+  //    anything else is a DATA request (from a load() hook) and is delegated
+  //    to options.fetch / the real fetch. In-flight reads are tracked so the
+  //    settle loop knows when work has drained.
   const pending = new Set();
-  const fetch = (reqPath) => {
-    const p = readComponentFile(reqPath, roots).then((text) => ({
-      ok: true,
-      status: 200,
-      text: async () => text,
-    })).catch((e) => ({ ok: false, status: e.code === 'ENOENT' ? 404 : 500, text: async () => '' }));
+  const fetch = (reqPath, init) => {
+    const p = (async () => {
+      if (isComponentRequest(reqPath)) {
+        const text = await tryReadComponentFile(reqPath, roots);
+        return text != null
+          ? { ok: true, status: 200, text: async () => text }
+          : { ok: false, status: 404, text: async () => '' };
+      }
+      if (typeof dataFetch !== 'function') return { ok: false, status: 404, text: async () => '' };
+      return dataFetch(reqPath, init);
+    })();
     pending.add(p);
     p.finally(() => pending.delete(p));
     return p;
@@ -167,17 +183,40 @@ export async function prerender(entryPath, options = {}) {
       const url = import.meta.resolve('spark-html');
       const spark = await import(url + '?prerender=' + Math.random().toString(36).slice(2));
 
-      await spark.mount(document.body);
-
       // ── Settle loop (design §5): the tree expands in waves — rAF reveals,
       //    and imports inside each/if resolve asynchronously, fetching more
       //    children. Loop until a full pass does no work.
-      for (let pass = 0; pass < maxPasses; pass++) {
-        const drained = drainRaf();
-        if (pending.size) await Promise.all([...pending]);
-        await microtaskTurn();
-        await microtaskTurn();
-        if (drained === 0 && pending.size === 0 && rafQueue.length === 0) break;
+      const settle = async () => {
+        for (let pass = 0; pass < maxPasses; pass++) {
+          const drained = drainRaf();
+          if (pending.size) await Promise.all([...pending]);
+          await microtaskTurn();
+          await microtaskTurn();
+          if (drained === 0 && pending.size === 0 && rafQueue.length === 0) break;
+        }
+      };
+
+      await spark.mount(document.body);
+      await settle();
+
+      // ── Phase 2: awaitable data hook. A component may declare an async
+      //    `load()` that fetches API data and assigns it to state. We call
+      //    every load() (data fetches go through the delegate above), await
+      //    them, then re-settle so the loaded content renders into the HTML.
+      //    Phase 1 is unchanged — components without load() never run extra
+      //    work, and load() is a plain function, not a special API.
+      const loaders = [];
+      for (const host of document.querySelectorAll('[name]')) {
+        const fn = host.__sparkScope && host.__sparkScope.load;
+        if (typeof fn === 'function') loaders.push(fn);
+      }
+      if (loaders.length) {
+        await Promise.all(
+          loaders.map(async (fn) => {
+            try { await fn(); } catch (e) { console.warn('[spark-prerender] load() threw:', e.message); }
+          }),
+        );
+        await settle();
       }
 
       injectMetadata(document, metaMap);

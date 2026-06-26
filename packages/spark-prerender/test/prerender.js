@@ -86,5 +86,52 @@ await test('idempotent-ish: a second prerender of the same entry works', async (
   assert.ok(again.includes('My Tasks') && again.includes('built with spark'));
 });
 
+// ── Phase 2: awaitable data hook ──
+console.log('\nspark-prerender — data hook (Phase 2)');
+
+const dataEntry = join(here, 'fixture', 'data.html');
+let dataFetchCalls = 0;
+const mockFetch = async (url) => {
+  dataFetchCalls++;
+  if (String(url).endsWith('/api/photos')) {
+    return { ok: true, status: 200, json: async () => [
+      { title: 'Sunrise over the bay' },
+      { title: 'Forest path' },
+      { title: 'Ocean at dusk' },
+    ] };
+  }
+  return { ok: false, status: 404, json: async () => null };
+};
+const dataHtml = await prerender(dataEntry, { fetch: mockFetch });
+const dhas = (s) => assert.ok(dataHtml.includes(s), `expected data output to include: ${s}`);
+
+await test('load() data is fetched (via the delegated fetch) and rendered', () => {
+  assert.ok(dataFetchCalls >= 1, 'data fetch was not called');
+  dhas('Sunrise over the bay');
+  dhas('Forest path');
+  dhas('Ocean at dusk');
+});
+
+await test('state derived from loaded data re-renders after the hook', () => {
+  dhas('3 photos');
+  assert.ok(!dataHtml.includes('loading…'), 'still shows the pre-load placeholder');
+});
+
+await test('a component-file fetch is NOT sent to the data fetch', () => {
+  // Only /api/photos should have hit mockFetch — the gallery component itself
+  // is read from disk, not delegated.
+  assert.equal(dataFetchCalls, 1, `data fetch called ${dataFetchCalls}× (expected 1)`);
+});
+
+await test('load() metadata (pageTitle) is injected too', () => {
+  dhas('<title>Gallery — prerendered with data</title>');
+});
+
+await test('without options.fetch, Phase 1 pages are unaffected', async () => {
+  // The original metadata fixture has no load() — still prerenders as before.
+  const again = await prerender(entry);
+  assert.ok(again.includes('My Tasks') && again.includes('built with spark'));
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
