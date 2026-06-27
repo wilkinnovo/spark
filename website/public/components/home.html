@@ -74,6 +74,34 @@
 </section>
 
 <section class="sec">
+  <p class="sec-eyebrow">Use it — no build required</p>
+  <div class="use-grid">
+    <div class="use-step">
+      <div class="use-h"><span class="use-n">1</span> Load Spark from a CDN</div>
+<pre class="ucode" spark-ignore>&lt;script type=<span class="k">"importmap"</span>&gt;
+  { "imports": {
+    "spark-html": <span class="k">"https://esm.sh/spark-html@0.21"</span>
+  } }
+&lt;/script&gt;
+
+&lt;script type=<span class="k">"module"</span>&gt;
+  <span class="k">import</span> { mount } <span class="k">from</span> 'spark-html';
+  mount();
+&lt;/script&gt;</pre>
+    </div>
+    <div class="use-step">
+      <div class="use-h"><span class="use-n">2</span> Import a component — even from a URL</div>
+<pre class="ucode" spark-ignore>&lt;div import=<span class="k">"components/card"</span>&gt;&lt;/div&gt;
+
+&lt;!-- …or straight from anywhere --&gt;
+&lt;div import=<span class="k">"https://cdn.jsdelivr.net/
+  gh/you/repo/card.html"</span>&gt;&lt;/div&gt;</pre>
+    </div>
+  </div>
+  <p class="use-note">Serve any static folder (<code>npx serve</code>) — no npm, no bundler, no compiler. <a href="{app.base}/docs">Read the docs →</a></p>
+</section>
+
+<section class="sec">
   <div class="sec-head">
     <p class="sec-eyebrow">Built with Spark</p>
     <a class="more" href="{app.base}/showcase">View all →</a>
@@ -118,6 +146,7 @@
 
 <style>
   .hero { display: grid; grid-template-columns: 1.25fr 1fr; gap: 48px; align-items: center; padding: 88px 0 56px; }
+  .hero-copy, .demo { min-width: 0; }
   .eyebrow { font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--spark); margin-bottom: 18px; }
   .eyebrow span { display: inline-block; margin: 0 3px; opacity: 0; animation: fadeUp .55s cubic-bezier(.2,.7,.2,1) forwards; }
   .eyebrow .d { color: var(--muted-dim); }
@@ -157,7 +186,7 @@
   .dt.on { color: var(--spark); font-weight: 700; background: var(--bg); }
   .dt:hover { color: var(--text); }
   .demo-body { padding: 22px; }
-  pre.code { font-size: 13px; line-height: 1.7; color: var(--muted); white-space: pre-wrap; }
+  pre.code { font-size: 13px; line-height: 1.7; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
   pre.code .k { color: var(--spark); }
   .live { margin-top: 18px; padding-top: 18px; border-top: 1px dashed var(--border); }
   .live-label { font-size: 11px; color: var(--spark); margin-bottom: 10px; }
@@ -181,6 +210,17 @@
   .cell h3 { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
   .cell h3 .dot { color: var(--spark); }
   .cell p { font-size: 13.5px; color: var(--muted); }
+
+  .use-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .use-step { background: var(--surface); border: 1px solid var(--border); }
+  .use-h { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 600; }
+  .use-n { width: 20px; height: 20px; display: grid; place-items: center; background: var(--spark); color: #000; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+  .ucode { padding: 16px 18px; font-size: 12.5px; line-height: 1.7; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .ucode .k { color: var(--spark); }
+  .use-note { margin-top: 16px; font-size: 13px; color: var(--muted); }
+  .use-note code { color: var(--spark); background: var(--surface-2); padding: 1px 6px; }
+  .use-note a { color: var(--spark); }
+  @media (max-width: 860px) { .use-grid { grid-template-columns: 1fr; } }
 
   .show { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
   .card { display: flex; flex-direction: column; }

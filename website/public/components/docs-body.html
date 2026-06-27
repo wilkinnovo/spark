@@ -245,22 +245,35 @@ npx spark-prerender dist/index.html dist/docs.html</pre>
   let pageDescription = 'Spark docs — single-file reactive HTML components, props, stores, router, prerender.';
   onMount(() => {
     if (typeof window !== 'undefined' && window.highlightAll) window.highlightAll();
-    // Scrollspy: highlight the TOC link for the section in view.
+    // Scrollspy: mark the TOC link for the section currently at the top.
     const links = [...document.querySelectorAll('.docs aside a')];
-    const byId = {};
-    links.forEach((a) => { byId[(a.getAttribute('href') || '').slice(1)] = a; });
-    const heads = [...document.querySelectorAll('.docs main [id]')];
-    if (typeof IntersectionObserver === 'undefined' || !heads.length) return;
-    const io = new IntersectionObserver((entries) => {
-      for (const en of entries) {
-        if (!en.isIntersecting) continue;
-        links.forEach((a) => a.classList.remove('active'));
-        const a = byId[en.target.id];
-        if (a) a.classList.add('active');
+    const byId = new Map();
+    links.forEach((a) => { const h = a.getAttribute('href') || ''; if (h[0] === '#') byId.set(h.slice(1), a); });
+    const heads = [...document.querySelectorAll('.docs main [id]')].filter((h) => byId.has(h.id));
+    if (!heads.length) return;
+
+    let lockUntil = 0; // after a click, keep the clicked link active through the smooth scroll
+    function setActive(id) {
+      links.forEach((a) => a.classList.remove('active'));
+      const a = byId.get(id);
+      if (a) a.classList.add('active');
+    }
+    function spy() {
+      if (Date.now() < lockUntil) return;
+      let current = heads[0].id;
+      for (const h of heads) {
+        if (h.getBoundingClientRect().top <= 120) current = h.id; else break;
       }
-    }, { rootMargin: '0px 0px -78% 0px', threshold: 0 });
-    heads.forEach((h) => io.observe(h));
-    return () => io.disconnect();
+      setActive(current);
+    }
+    spy(); // set on load
+    window.addEventListener('scroll', spy, { passive: true });
+    // Clicking a link selects it immediately and holds it while the page scrolls.
+    links.forEach((a) => a.addEventListener('click', () => {
+      const h = a.getAttribute('href') || '';
+      if (h[0] === '#') { setActive(h.slice(1)); lockUntil = Date.now() + 900; }
+    }));
+    return () => window.removeEventListener('scroll', spy);
   });
 </script>
 
