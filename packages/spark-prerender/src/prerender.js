@@ -138,6 +138,23 @@ function injectMetadata(document, metaMap) {
   }
 }
 
+// Make the prerendered DOM re-resolvable by a client `mount()`: write the
+// import path back onto each TOP-LEVEL component host (keeping its `name` and
+// rendered content). On the client, `resolveImports` finds the `[import]`,
+// re-fetches the component, and renders over the prerendered markup — so a
+// real browser takes over cleanly instead of finding a script-less host and
+// blanking. Nested hosts are left alone: they're rebuilt when their parent
+// re-resolves. Disable with `hydratable: false` for pure-static output.
+function makeHydratable(document) {
+  const hosts = [...document.querySelectorAll('[name]')].filter((h) => h.__sparkImportPath);
+  for (const host of hosts) {
+    let p = host.parentNode;
+    let nested = false;
+    while (p) { if (p.__sparkImportPath) { nested = true; break; } p = p.parentNode; }
+    if (!nested) host.setAttribute('import', host.__sparkImportPath);
+  }
+}
+
 function serialize(document) {
   let html = document.toString();
   if (!/^\s*<!doctype/i.test(html)) html = '<!DOCTYPE html>\n' + html;
@@ -155,6 +172,10 @@ function serialize(document) {
  *                                           `import="components/x"` against.
  * @param {Array} [options.meta]             Metadata mapping (see DEFAULT_META).
  * @param {number} [options.maxPasses]       Settle-loop safety cap (default 100).
+ * @param {boolean} [options.hydratable=true] Write the import path back onto
+ *                                           top-level hosts so a client mount
+ *                                           re-renders over the output (no
+ *                                           blank). Set false for pure-static.
  * @param {Function} [options.fetch]         Fetch used for NON-component (data)
  *                                           requests a `load()` hook makes —
  *                                           point it at fixtures or a local API.
@@ -270,6 +291,7 @@ export async function prerender(entryPath, options = {}) {
       }
 
       injectMetadata(document, metaMap);
+      if (options.hydratable !== false) makeHydratable(document);
       return serialize(document);
     },
   );

@@ -37,6 +37,12 @@ export interface PrerenderOptions {
   stubBrowserGlobals?: boolean;
   /** Extra/override global stubs. */
   stubs?: Record<string, unknown>;
+  /**
+   * Write the import path back onto top-level component hosts so a client
+   * `mount()` re-renders over the prerendered DOM (no blank). Default: true.
+   * Set false for pure-static output (no client takeover).
+   */
+  hydratable?: boolean;
 }
 
 /**

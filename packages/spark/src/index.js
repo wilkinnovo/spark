@@ -359,6 +359,10 @@ async function resolveImportNode(node, scope = null) {
     // the host, so classes/ids on it are preserved.
     const host = document.createElement('div');
     host.setAttribute('name', compName);
+    // Remember where this came from. The prerenderer reads this to write the
+    // import path back onto the serialized host, so a client mount can
+    // re-resolve and render over the prerendered DOM (no blank).
+    host.__sparkImportPath = path;
     // Cloak until booted+patched so the raw markup (with {braces}) and
     // not-yet-injected styles never flash. reveal() clears this.
     host.setAttribute('data-spark-cloak', '');

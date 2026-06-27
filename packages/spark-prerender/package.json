@@ -20,7 +20,7 @@
     "spark-prerender": "bin/cli.js"
   },
   "scripts": {
-    "test": "node test/prerender.js && node test/vite.js"
+    "test": "node test/prerender.js && node test/vite.js && node test/hydrate.js"
   },
   "files": [
     "src",
