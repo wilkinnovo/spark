@@ -24,6 +24,15 @@ await test('routesOf() finds the concrete routes (catch-all excluded)', () => {
   assert.deepEqual(routesOf(source), ['/', '/about', '/projects']);
 });
 
+await test('routesOf() skips dynamic (:param) routes', () => {
+  const html = '<body>' +
+    '<template route="/"><div import="components/home-pg"></div></template>' +
+    '<template route="/blog/:id"><div import="components/about-pg"></div></template>' +
+    '<template route="*"><div import="components/missing"></div></template>' +
+    '</body>';
+  assert.deepEqual(routesOf(html), ['/'], 'dynamic + catch-all excluded');
+});
+
 await test('routeToFile() maps routes to static files', () => {
   assert.equal(routeToFile('/'), 'index.html');
   assert.equal(routeToFile('/about'), 'about.html');

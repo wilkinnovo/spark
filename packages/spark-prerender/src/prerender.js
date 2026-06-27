@@ -442,7 +442,10 @@ export function routesOf(html) {
   const { document } = parseHTML(html);
   return [...document.querySelectorAll('template[route]')]
     .map((t) => t.getAttribute('route'))
-    .filter((r) => r && r !== '*')
+    // Skip the catch-all and DYNAMIC routes (`/blog/:id`) — their params aren't
+    // known at build time, so they're rendered on the client (the SPA fallback
+    // / catch-all serves them). Concrete routes prerender as usual.
+    .filter((r) => r && r !== '*' && !r.includes(':'))
     .map(normalizeRoute);
 }
 

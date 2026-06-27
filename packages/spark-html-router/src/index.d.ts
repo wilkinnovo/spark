@@ -17,6 +17,11 @@
 export interface RouteState {
   /** The active, base-stripped, no-trailing-slash path (e.g. "/about"). */
   path: string;
+  /**
+   * Captured dynamic-segment params, e.g. route="/blog/:id" on /blog/42 →
+   * `{ id: "42" }`. Empty object for static routes.
+   */
+  params: Record<string, string>;
 }
 
 export interface RouterOptions {

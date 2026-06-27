@@ -46,12 +46,13 @@ function currentPath() {
   return normalize((typeof location !== 'undefined' && location.pathname) || '/');
 }
 
-// Publish the active path to the reactive `route` store so any component can
-// `useStore('route')` and react (nav highlight, document.title, analytics…).
+// Publish the active path + params to the reactive `route` store so any
+// component can `useStore('route')` and react (nav highlight, title, params…).
 // Created here BEFORE the first mount so components find it on boot.
-function setRoute(path) {
-  if (!routeProxy) routeProxy = store('route', { path });
+function setRoute(path, params) {
+  if (!routeProxy) routeProxy = store('route', { path, params: params || {} });
   routeProxy.path = path;
+  routeProxy.params = params || {};
 }
 
 // Reflect the active route onto same-origin <a> links: set aria-current="page"
@@ -75,32 +76,50 @@ function markActiveLinks() {
   }
 }
 
-// Find the <template route> that matches `path`: exact match first, then a
-// `route="*"` catch-all (404) if present.
-function matchTemplate(path) {
+// Resolve `path` to a matching <template route> and any captured params.
+// Precedence: an EXACT static route wins; then a DYNAMIC route with `:param`
+// segments (e.g. route="/blog/:id" matches /blog/42 → { id: '42' }); then a
+// `route="*"` catch-all (404). Returns { tpl, params } or null.
+function resolve(path) {
   const templates = [...rootEl.querySelectorAll('template[route]')];
+  const segs = path.split('/').filter(Boolean);
   let fallback = null;
+  let dynamic = null;
   for (const t of templates) {
     const r = t.getAttribute('route');
     if (r === '*') { fallback = t; continue; }
-    if (normalize(r) === path) return t;
+    const rp = normalize(r);
+    if (rp === path) return { tpl: t, params: {} }; // exact static — wins
+    if (rp.includes(':') && !dynamic) {
+      const rsegs = rp.split('/').filter(Boolean);
+      if (rsegs.length !== segs.length) continue;
+      const params = {};
+      let ok = true;
+      for (let i = 0; i < rsegs.length; i++) {
+        if (rsegs[i][0] === ':') {
+          try { params[rsegs[i].slice(1)] = decodeURIComponent(segs[i]); }
+          catch { params[rsegs[i].slice(1)] = segs[i]; }
+        } else if (rsegs[i] !== segs[i]) { ok = false; break; }
+      }
+      if (ok) dynamic = { tpl: t, params };
+    }
   }
-  return fallback;
+  return dynamic || (fallback ? { tpl: fallback, params: {} } : null);
 }
 
 // Clone the matching <template route> into a fresh outlet element and insert
-// it after the template. The caller mounts it. Returns the outlet, or null
-// when there's no matching route and no catch-all.
+// it after the template. The caller mounts it. Returns { outlet, params }, or
+// null when there's no matching route and no catch-all.
 function buildOutlet(path) {
-  const t = matchTemplate(path);
-  if (!t) return null;
+  const m = resolve(path);
+  if (!m) return null;
   const outlet = document.createElement('div');
   outlet.setAttribute('data-spark-route', path);
   // Clone the template's children in (appendChild of a DocumentFragment is
   // unreliable across DOM impls, so copy node by node).
-  for (const child of [...t.content.childNodes]) outlet.appendChild(child.cloneNode(true));
-  t.after(outlet);
-  return outlet;
+  for (const child of [...m.tpl.content.childNodes]) outlet.appendChild(child.cloneNode(true));
+  m.tpl.after(outlet);
+  return { outlet, params: m.params };
 }
 
 // Initial render, folded INTO the single mount(). If the page was prerendered
@@ -110,16 +129,16 @@ function buildOutlet(path) {
 // mount(rootEl) that follows resolves its imports and boots it once.
 function prepareInitial() {
   const path = currentPath();
-  setRoute(path);
   const baked = rootEl.querySelector('[data-spark-route]');
-  if (baked) {
-    if (normalize(baked.getAttribute('data-spark-route')) === path) {
-      active = baked;            // prerendered outlet matches the URL — adopt
-      return;
-    }
-    baked.remove();              // stale outlet (shouldn't happen) — rebuild
+  if (baked && normalize(baked.getAttribute('data-spark-route')) === path) {
+    active = baked;              // prerendered outlet matches the URL — adopt
+    setRoute(path, (resolve(path) || {}).params || {});
+    return;
   }
-  active = buildOutlet(path);     // no prerendered outlet (dev / SPA-only)
+  if (baked) baked.remove();    // stale outlet (shouldn't happen) — rebuild
+  const built = buildOutlet(path); // no prerendered outlet (dev / SPA-only)
+  active = built ? built.outlet : null;
+  setRoute(path, built ? built.params : {});
 }
 
 // SPA navigation render: swap the active outlet for the route matching the URL.
@@ -128,15 +147,16 @@ function prepareInitial() {
 async function render() {
   const path = currentPath();
   if (active && normalize(active.getAttribute('data-spark-route')) === path) {
-    setRoute(path);
+    setRoute(path, (resolve(path) || {}).params || {});
     markActiveLinks();
     return; // already showing this route
   }
 
   const old = active;
-  const outlet = buildOutlet(path);
+  const built = buildOutlet(path);
+  const outlet = built ? built.outlet : null;
   active = outlet;
-  setRoute(path);
+  setRoute(path, built ? built.params : {});
 
   // `quiet` so SPA navigation doesn't reprint the "⚡ ready" banner on every
   // route change — the initial mount() below already logged the app boot once.

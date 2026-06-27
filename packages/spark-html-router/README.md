@@ -82,7 +82,24 @@ navigate('/about');                 // navigate programmatically
 
 - **Exact match** — `route="/about"` matches `/about` (trailing slashes and the
   base path are normalized away).
+- **Dynamic segments** — `route="/blog/:id"` matches `/blog/42`; the captured
+  params land on the `route` store. Exact routes win over dynamic ones.
 - **Catch-all** — `route="*"` renders for any unmatched path (a 404 page).
+
+```html
+<template route="/blog/:id"><div import="components/post"></div></template>
+
+<!-- components/post.html -->
+<h1>Post #{post}</h1>
+<script>
+  const route = useStore('route');
+  $: post = route.params.id;      // "42" on /blog/42
+</script>
+```
+
+Precedence: **exact → dynamic → catch-all**. Navigating between two matches of
+the same dynamic route (`/blog/1` → `/blog/2`) re-mounts the route with the new
+params.
 
 ## SEO / prerender
 
@@ -94,5 +111,7 @@ adopts the prerendered route with no flash.
 
 ## Notes
 
-- v1 covers flat, exact-match routes + a catch-all. Path params (`/blog/:id`)
-  and nested routes are not yet supported.
+- Covers exact routes, dynamic `:param` segments, and a catch-all. Dynamic
+  routes render on the client (their params aren't known at build time, so
+  `spark-prerender` skips them); concrete routes prerender as usual. Nested
+  layouts and wildcard splats (`/docs/*`) are not yet supported.

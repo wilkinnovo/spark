@@ -40,12 +40,16 @@ component('home', `<h1>Home page</h1><script>onMount(() => { globalThis.__homeMo
 component('about', `<h1>About us</h1>`);
 component('projects', `<h1>Our projects</h1>`);
 component('notfound', `<h1>404 missing</h1>`);
+component('user', `<h1>User {uid}</h1><script>const route = useStore('route'); let uid = ''; $: uid = route.params.id;<\/script>`);
+component('me', `<h1>My profile</h1>`);
 
 parseHTML(`
   <nav><a class="lnk-home" href="/">Home</a><a class="lnk-about" href="/about">About</a><a class="lnk-ext" href="https://x.com/p" target="_blank">ext</a></nav>
   <template route="/"><div import="home"></div></template>
   <template route="/about"><div import="about"></div></template>
   <template route="/projects"><div import="projects"></div></template>
+  <template route="/users/:id"><div import="user"></div></template>
+  <template route="/users/me"><div import="me"></div></template>
   <template route="*"><div import="notfound"></div></template>
 `, body);
 
@@ -114,6 +118,25 @@ await test('clicking a same-origin <a> navigates (SPA, no reload)', async () => 
 await test('an external/_blank link is NOT intercepted', () => {
   const e = fireClick(body.querySelector('.lnk-ext'));
   assert.equal(e.defaultPrevented, false, 'external link left to the browser');
+});
+await test('a dynamic route="/users/:id" captures the param into route.params', async () => {
+  await navigate('/users/7');
+  await tick();
+  has('User 7');
+  assert.equal(store('route').params.id, '7', 'param captured');
+});
+await test('navigating between dynamic matches updates params', async () => {
+  await navigate('/users/9');
+  await tick();
+  has('User 9');
+  hasnt('User 7');
+  assert.equal(store('route').params.id, '9');
+});
+await test('an exact route wins over a dynamic one', async () => {
+  await navigate('/users/me');
+  await tick();
+  has('My profile');
+  hasnt('User me');
 });
 await test('Back/Forward (popstate) re-renders the route', async () => {
   location.pathname = '/projects';
