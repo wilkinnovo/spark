@@ -17,7 +17,7 @@
     }
   },
   "bin": {
-    "spark-prerender": "./bin/cli.js"
+    "spark-prerender": "bin/cli.js"
   },
   "scripts": {
     "test": "node test/prerender.js && node test/vite.js"
