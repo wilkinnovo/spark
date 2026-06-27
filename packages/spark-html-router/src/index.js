@@ -116,7 +116,9 @@ async function render() {
   active = outlet;
   setRoute(path);
 
-  if (outlet) await mount(outlet);  // resolve imports + boot — exactly once
+  // `quiet` so SPA navigation doesn't reprint the "⚡ ready" banner on every
+  // route change — the initial mount() below already logged the app boot once.
+  if (outlet) await mount(outlet, { quiet: true });  // resolve imports + boot — exactly once
 
   if (old && old !== outlet) {
     unmount(old);

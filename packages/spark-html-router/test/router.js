@@ -76,6 +76,18 @@ await test('a catch-all route="*" renders for unknown paths', async () => {
   has('404 missing');
   hasnt('About us');
 });
+await test('SPA navigation does not reprint the "⚡ ready" banner', async () => {
+  const orig = console.log;
+  const lines = [];
+  console.log = (...a) => lines.push(a.join(' '));
+  try {
+    await navigate('/');
+    await tick();
+  } finally {
+    console.log = orig;
+  }
+  assert.ok(!lines.some((l) => l.includes('⚡ ready')), `navigation logged a ready banner: ${lines.join(' | ')}`);
+});
 await test('clicking a same-origin <a> navigates (SPA, no reload)', async () => {
   await navigate('/');
   await tick();

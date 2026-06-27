@@ -2198,6 +2198,9 @@ function scopeCss(css, tag) {
  *   devOverlay — show a full-screen error overlay (message + component +
  *   stack) when a component fails. Off by default; also enabled by the global
  *   `globalThis.__SPARK_DEV_OVERLAY__`. Intended for development only.
+ *   quiet — suppress the "⚡ ready" console line. Used for repeated subtree
+ *   mounts (e.g. the router booting each route) so navigation doesn't spam the
+ *   console; the initial app mount still logs once.
  *
  * Returns a promise that resolves when everything is booted.
  */
@@ -2218,7 +2221,7 @@ async function mount(root = document.body, options = {}) {
     if (root.querySelectorAll) {
       root.querySelectorAll('[data-spark-cloak]').forEach(reveal);
     }
-    if (!(typeof globalThis !== 'undefined' && globalThis.__SPARK_PRERENDER__)) {
+    if (!options.quiet && !(typeof globalThis !== 'undefined' && globalThis.__SPARK_PRERENDER__)) {
       console.log(
         `[spark] ⚡ ready — ${root.querySelectorAll('[name]').length} component(s)`,
       );
