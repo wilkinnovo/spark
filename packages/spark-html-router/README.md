@@ -26,24 +26,35 @@ matches the URL, intercepts same-origin `<a>` clicks for SPA navigation (no full
 reload), and tracks Back/Forward. The route templates are inert to the core
 runtime, so this is a tiny add-on — the `spark-html` core stays router-free.
 
-## Reactive active route
+## Active links (zero config)
 
-The router publishes the current path to a built-in `route` store, so any
-component can highlight the active link (or set the title, fire analytics, …)
-with `useStore('route')` — no manual `popstate`/`pushState` wiring:
+After every navigation the router sets `aria-current="page"` on the `<a>` whose
+`href` matches the current route, and clears it from the rest. Highlight the
+active link with pure CSS — no `useStore`, no per-link expressions:
 
 ```html
 <!-- components/site-nav.html -->
 <nav>
-  <a href="/"       class="link {homeActive}">Home</a>
-  <a href="/about"  class="link {aboutActive}">About</a>
+  <a href="/">Home</a>
+  <a href="/about">About</a>
+  <a href="/projects">Projects</a>
 </nav>
 
+<style>
+  nav a[aria-current="page"] { color: #fff; font-weight: 700; }
+</style>
+```
+
+## Reactive active route
+
+For anything beyond link styling — the document title, analytics, a breadcrumb —
+the router also publishes the current path to a built-in `route` store, so any
+component can react with `useStore('route')` (no `popstate`/`pushState` wiring):
+
+```html
 <script>
   const route = useStore('route');
-  let homeActive = '', aboutActive = '';
-  $: homeActive  = route.path === '/'      ? 'active' : '';
-  $: aboutActive = route.path === '/about' ? 'active' : '';
+  $: document.title = route.path === '/' ? 'Home' : 'My Site';
 </script>
 ```
 

@@ -54,6 +54,27 @@ function setRoute(path) {
   routeProxy.path = path;
 }
 
+// Reflect the active route onto same-origin <a> links: set aria-current="page"
+// on links whose href matches the current path, clear it on the rest. Lets a
+// nav highlight the active link with pure CSS — `a[aria-current="page"]` — and
+// no per-link `useStore('route')` wiring. Runs after each render.
+function markActiveLinks() {
+  if (!rootEl || !rootEl.querySelectorAll) return;
+  const path = currentPath();
+  for (const a of rootEl.querySelectorAll('a[href]')) {
+    const href = a.getAttribute('href');
+    let match = false;
+    if (href && !/^[a-z]+:/i.test(href) && !href.startsWith('#')) {
+      try {
+        const u = new URL(href, location.href);
+        if (u.origin === location.origin) match = normalize(u.pathname) === path;
+      } catch { /* malformed href — not active */ }
+    }
+    if (match) a.setAttribute('aria-current', 'page');
+    else if (a.getAttribute('aria-current') === 'page') a.removeAttribute('aria-current');
+  }
+}
+
 // Find the <template route> that matches `path`: exact match first, then a
 // `route="*"` catch-all (404) if present.
 function matchTemplate(path) {
@@ -108,6 +129,7 @@ async function render() {
   const path = currentPath();
   if (active && normalize(active.getAttribute('data-spark-route')) === path) {
     setRoute(path);
+    markActiveLinks();
     return; // already showing this route
   }
 
@@ -124,6 +146,7 @@ async function render() {
     unmount(old);
     old.remove();
   }
+  markActiveLinks();
 }
 
 // Navigate to a route programmatically (path is route-relative; base is added).
@@ -176,6 +199,7 @@ export async function router(options = {}) {
 
   prepareInitial();      // put the active route's outlet in the DOM (adopt/clone)
   await mount(rootEl);   // ONE mount: chrome + the active route, booted once
+  markActiveLinks();     // highlight the matching <a> (aria-current="page")
 }
 
 export default { router, navigate };

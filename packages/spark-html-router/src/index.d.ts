@@ -1,11 +1,16 @@
 /**
  * spark-html-router — declarative <template route> client routing for spark-html.
  *
- * The router publishes the active route to a built-in reactive `route` store,
- * so any component can react to navigation without manual history wiring:
+ * After each navigation the router sets `aria-current="page"` on the matching
+ * <a> link (clearing it elsewhere), so active links style with pure CSS:
+ *
+ *   nav a[aria-current="page"] { font-weight: 700; }
+ *
+ * It also publishes the active route to a built-in reactive `route` store, for
+ * anything beyond link styling (title, analytics) — no manual history wiring:
  *
  *   const route = useStore<RouteState>('route');
- *   $: active = route.path === '/about';
+ *   $: document.title = route.path === '/about' ? 'About' : 'Home';
  */
 
 /** Shape of the built-in `route` store the router maintains. */

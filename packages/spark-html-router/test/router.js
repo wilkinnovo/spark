@@ -42,7 +42,7 @@ component('projects', `<h1>Our projects</h1>`);
 component('notfound', `<h1>404 missing</h1>`);
 
 parseHTML(`
-  <nav><a class="lnk-about" href="/about">About</a><a class="lnk-ext" href="https://x.com/p" target="_blank">ext</a></nav>
+  <nav><a class="lnk-home" href="/">Home</a><a class="lnk-about" href="/about">About</a><a class="lnk-ext" href="https://x.com/p" target="_blank">ext</a></nav>
   <template route="/"><div import="home"></div></template>
   <template route="/about"><div import="about"></div></template>
   <template route="/projects"><div import="projects"></div></template>
@@ -62,6 +62,20 @@ await test('boots each route component exactly once (single mount)', () => {
 });
 await test('exposes a reactive `route` store with the active path', () => {
   assert.equal(store('route').path, '/', 'route store reflects the initial URL');
+});
+await test('marks the matching <a> with aria-current="page"', async () => {
+  const home = body.querySelector('.lnk-home');
+  const about = body.querySelector('.lnk-about');
+  const ext = body.querySelector('.lnk-ext');
+  assert.equal(home.getAttribute('aria-current'), 'page', 'home link active at "/"');
+  assert.equal(about.getAttribute('aria-current'), null, 'about link not active at "/"');
+  await navigate('/about');
+  await tick();
+  assert.equal(about.getAttribute('aria-current'), 'page', 'about link active at "/about"');
+  assert.equal(home.getAttribute('aria-current'), null, 'home link cleared');
+  assert.equal(ext.getAttribute('aria-current'), null, 'external link never marked');
+  await navigate('/');
+  await tick();
 });
 await test('navigate() swaps the route, removing the old one', async () => {
   await navigate('/about');
