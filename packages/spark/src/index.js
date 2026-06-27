@@ -350,9 +350,19 @@ async function resolveImportNode(node, scope = null) {
     const compName = path.replace(/.*\//, '').replace('.html', '');
     const { markup, script, style } = parseSFC(source);
 
-    // Capture the placeholder's children as slot content (before they're
-    // discarded), and the component that owns them, for scope.
-    const slotted = [...node.childNodes];
+    // HYDRATION: a prerendered host carries both `import` AND `name` (the
+    // prerenderer wrote the path back onto an already-booted host). We rebuild
+    // it FRESH but flash-free: the old, visible prerendered content stays in
+    // the DOM through the async fetch + nested resolves, then we boot the new
+    // subtree WHILE IT'S STILL DETACHED and swap it in atomically — so the
+    // browser never paints raw braces, a cloak, or a blank. A normal authored
+    // placeholder (import only) keeps the original cloak-then-reveal path.
+    const hydrate = node.hasAttribute('name');
+
+    // Slot content: a real placeholder's children are the caller's slotted
+    // content; a prerendered host's children are its own rendered output (not
+    // slots) — discard them.
+    const slotted = hydrate ? [] : [...node.childNodes];
     const parentHost = closestComponent(node);
 
     // Build the component host. The import placeholder itself becomes
@@ -364,13 +374,14 @@ async function resolveImportNode(node, scope = null) {
     // re-resolve and render over the prerendered DOM (no blank).
     host.__sparkImportPath = path;
     // Cloak until booted+patched so the raw markup (with {braces}) and
-    // not-yet-injected styles never flash. reveal() clears this.
-    host.setAttribute('data-spark-cloak', '');
-    // Placeholder attributes become PROPS (except import/class/id,
-    // which keep their normal HTML meaning and are carried over).
+    // not-yet-injected styles never flash. reveal() clears this. (Hydration
+    // hosts are booted before insertion, so they need no cloak.)
+    if (!hydrate) host.setAttribute('data-spark-cloak', '');
+    // Placeholder attributes become PROPS (except import/class/id and the
+    // runtime's own name/data-spark-* markers, which are never props).
     const props = {};
     for (const attr of node.attributes) {
-      if (attr.name === 'import') continue;
+      if (attr.name === 'import' || attr.name === 'name' || attr.name.startsWith('data-spark')) continue;
       const val =
         scope && attr.value.includes('{')
           ? interpolate(attr.value, scope)
@@ -390,6 +401,16 @@ async function resolveImportNode(node, scope = null) {
 
     projectSlots(host, slotted, parentHost); // <slot> content projection
     await resolveImports(host); // nested imports (incl. inside slots)
+
+    if (hydrate) {
+      // Boot the whole subtree while detached so it's fully rendered before it
+      // ever touches the page, then swap it for the old content in one tick.
+      bootComponent(host);
+      const nested = [...host.querySelectorAll('[name]')];
+      nested.forEach(bootComponent);
+      reveal(host);
+      nested.forEach(reveal);
+    }
     node.replaceWith(host);
     return host;
   } catch (e) {
