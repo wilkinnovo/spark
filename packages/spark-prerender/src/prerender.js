@@ -263,6 +263,24 @@ export async function prerender(entryPath, options = {}) {
     }
   }
 
+  // Isolate every <template route> while we mount. Real browsers never let
+  // querySelectorAll('[import]') descend into <template> content, but linkedom
+  // versions differ — and an un-isolated template would have its imports
+  // resolved, leaking other routes' content into this file (about.html showing
+  // the home page). Swap each template for a comment marker now (positions
+  // preserved), then restore it before serialize so the client router can
+  // still clone it for SPA navigation.
+  const parkedTemplates = [];
+  for (const t of [...document.querySelectorAll('template[route]')]) {
+    const marker = document.createComment('spark-route');
+    t.replaceWith(marker);
+    parkedTemplates.push([marker, t]);
+  }
+  const restoreTemplates = () => {
+    for (const [marker, t] of parkedTemplates) marker.replaceWith(t);
+    parkedTemplates.length = 0;
+  };
+
   // Timer handling during prerender. A component that starts a repeating
   // setInterval in onMount would keep the build process alive forever, so we
   // no-op intervals (they're live-only — no value at build time). But
@@ -385,6 +403,10 @@ export async function prerender(entryPath, options = {}) {
         );
         await settle();
       }
+
+      // Restore the parked <template route> blocks so the client router can
+      // clone them for SPA navigation to the other routes.
+      restoreTemplates();
 
       injectMetadata(document, metaMap);
       if (options.hydratable !== false) makeHydratable(document);

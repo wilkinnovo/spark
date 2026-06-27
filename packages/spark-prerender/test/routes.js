@@ -38,6 +38,17 @@ await test('prerendering a route bakes its content + an adoptable marker', async
   assert.ok(about.includes('About</a>'), 'chrome (nav) still rendered');
 });
 
+await test('isolates other routes: one outlet, untouched <template> blocks', async () => {
+  const about = await prerender(entry, { route: '/about' });
+  const outlets = about.match(/data-spark-route=/g) || [];
+  assert.equal(outlets.length, 1, `exactly one route outlet, found ${outlets.length}`);
+  // The other routes survive as inert <template route> for client navigation,
+  // with their imports UNresolved (no leaked content, no booted markers).
+  assert.ok(/<template route="\/">/.test(about), 'home template preserved for SPA nav');
+  assert.ok(/<template route="\/projects">/.test(about), 'projects template preserved');
+  assert.ok(about.includes('import="components/home-pg"'), 'home import left unresolved in its template');
+});
+
 await test('the "/" route renders the home page', async () => {
   const home = await prerender(entry, { route: '/' });
   assert.ok(home.includes('home page'));

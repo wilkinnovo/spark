@@ -1,24 +1,36 @@
 /**
- * spark-router — declarative client routing for spark-html.
+ * spark-html-router — declarative client routing for spark-html.
  *
- * Author routes as inert <template route> blocks (the core runtime ignores
- * them — querySelectorAll('[import]') doesn't descend into <template> content),
- * then call router() once. It mounts the page chrome, renders the route that
- * matches the URL, intercepts same-origin <a> clicks for SPA navigation, and
- * tracks Back/Forward.
+ * Author routes as inert <template route> blocks (the runtime never descends
+ * into <template> content, so they're invisible to mount()), then call
+ * router() once. It:
+ *
+ *   • mounts the page (chrome + the active route) a SINGLE time — no flash,
+ *     no double-boot, onMount fires exactly once per component;
+ *   • adopts a prerendered route outlet in place (spark-prerender bakes the
+ *     active route as <div data-spark-route> — the runtime hydrates over it);
+ *   • intercepts same-origin <a> clicks for SPA navigation and tracks
+ *     Back/Forward;
+ *   • exposes a reactive `route` store ({ path }) so nav links, titles, and
+ *     analytics can react to the current route with `useStore('route')`.
  *
  *   <template route="/">       <div import="components/home"></div>   </template>
  *   <template route="/about">  <div import="components/about"></div>  </template>
  *   <template route="*">       <div import="components/not-found"></div></template>
  *
- *   import { router } from 'spark-router';
+ *   import { router } from 'spark-html-router';
  *   router();                       // that's it
+ *
+ *   // anywhere, to highlight the active link:
+ *   const route = useStore('route');
+ *   $: active = route.path === '/about';
  */
-import { mount, unmount } from 'spark-html';
+import { mount, unmount, store } from 'spark-html';
 
 let base = '';
 let rootEl = null;
 let active = null;     // the live outlet element for the current route
+let routeProxy = null; // the reactive `route` store proxy
 let started = false;
 
 // Normalize a pathname to a base-stripped, no-trailing-slash route key.
@@ -34,6 +46,14 @@ function currentPath() {
   return normalize((typeof location !== 'undefined' && location.pathname) || '/');
 }
 
+// Publish the active path to the reactive `route` store so any component can
+// `useStore('route')` and react (nav highlight, document.title, analytics…).
+// Created here BEFORE the first mount so components find it on boot.
+function setRoute(path) {
+  if (!routeProxy) routeProxy = store('route', { path });
+  routeProxy.path = path;
+}
+
 // Find the <template route> that matches `path`: exact match first, then a
 // `route="*"` catch-all (404) if present.
 function matchTemplate(path) {
@@ -47,44 +67,61 @@ function matchTemplate(path) {
   return fallback;
 }
 
-// Render the route matching the current URL. Adopts prerendered route content
-// in place (no flash) when it's already there; otherwise clones the template
-// into a fresh outlet and mounts it.
-async function render() {
-  const path = currentPath();
-
-  // Prerendered output marks the active route's content with data-spark-route.
-  const prerendered = rootEl.querySelector(`[data-spark-route="${cssEscape(path)}"]`);
-  if (prerendered && active === prerendered) return; // already showing it
-
-  if (active && active !== prerendered) {
-    unmount(active);
-    active.remove();
-    active = null;
-  }
-
-  if (prerendered) {
-    // Adopt: the content is already in the DOM from prerender — just (re)boot
-    // its components in place. The runtime hydrates over them without a flash.
-    active = prerendered;
-    await mount(prerendered);
-    return;
-  }
-
+// Clone the matching <template route> into a fresh outlet element and insert
+// it after the template. The caller mounts it. Returns the outlet, or null
+// when there's no matching route and no catch-all.
+function buildOutlet(path) {
   const t = matchTemplate(path);
-  if (!t) return; // no route + no catch-all → render nothing
+  if (!t) return null;
   const outlet = document.createElement('div');
   outlet.setAttribute('data-spark-route', path);
   // Clone the template's children in (appendChild of a DocumentFragment is
-  // unreliable across DOM impls).
+  // unreliable across DOM impls, so copy node by node).
   for (const child of [...t.content.childNodes]) outlet.appendChild(child.cloneNode(true));
   t.after(outlet);
-  active = outlet;
-  await mount(outlet);
+  return outlet;
 }
 
-function cssEscape(s) {
-  return String(s).replace(/["\\]/g, '\\$&');
+// Initial render, folded INTO the single mount(). If the page was prerendered
+// the active route is already baked as <div data-spark-route> — adopt it in
+// place so mount() hydrates over it (no flash, no clone, no second mount).
+// Otherwise clone the matching template into an outlet. Either way the one
+// mount(rootEl) that follows resolves its imports and boots it once.
+function prepareInitial() {
+  const path = currentPath();
+  setRoute(path);
+  const baked = rootEl.querySelector('[data-spark-route]');
+  if (baked) {
+    if (normalize(baked.getAttribute('data-spark-route')) === path) {
+      active = baked;            // prerendered outlet matches the URL — adopt
+      return;
+    }
+    baked.remove();              // stale outlet (shouldn't happen) — rebuild
+  }
+  active = buildOutlet(path);     // no prerendered outlet (dev / SPA-only)
+}
+
+// SPA navigation render: swap the active outlet for the route matching the URL.
+// The new outlet is mounted BEFORE the old one is torn down, so there's no
+// blank frame between routes, and onMount fires once for the new route.
+async function render() {
+  const path = currentPath();
+  if (active && normalize(active.getAttribute('data-spark-route')) === path) {
+    setRoute(path);
+    return; // already showing this route
+  }
+
+  const old = active;
+  const outlet = buildOutlet(path);
+  active = outlet;
+  setRoute(path);
+
+  if (outlet) await mount(outlet);  // resolve imports + boot — exactly once
+
+  if (old && old !== outlet) {
+    unmount(old);
+    old.remove();
+  }
 }
 
 // Navigate to a route programmatically (path is route-relative; base is added).
@@ -112,7 +149,9 @@ function onClick(e) {
 }
 
 /**
- * Start the router: mount the page and show the route matching the URL.
+ * Start the router: mount the page (chrome + active route, once) and show the
+ * route matching the URL, intercept same-origin <a> clicks for SPA navigation,
+ * and track Back/Forward. Call it once instead of mount().
  *
  * @param {object} [options]
  * @param {string} [options.base]  Path prefix the app is served under (e.g.
@@ -133,8 +172,8 @@ export async function router(options = {}) {
   if (typeof document !== 'undefined') document.addEventListener('click', onClick);
   if (typeof window !== 'undefined') window.addEventListener('popstate', () => render());
 
-  await mount(rootEl);   // boot the chrome (route templates stay inert)
-  await render();        // show the active route
+  prepareInitial();      // put the active route's outlet in the DOM (adopt/clone)
+  await mount(rootEl);   // ONE mount: chrome + the active route, booted once
 }
 
 export default { router, navigate };

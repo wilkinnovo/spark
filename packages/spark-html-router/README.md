@@ -20,10 +20,32 @@ Declarative client routing for [spark-html](https://www.npmjs.com/package/spark-
 </script>
 ```
 
-`router()` mounts the page, shows the `<template route>` that matches the URL,
-intercepts same-origin `<a>` clicks for SPA navigation (no full reload), and
-tracks Back/Forward. The route templates are inert to the core runtime, so this
-is a tiny add-on — the `spark-html` core stays router-free.
+`router()` mounts the page **once** (chrome + the active route together — every
+component's `onMount` fires exactly once), shows the `<template route>` that
+matches the URL, intercepts same-origin `<a>` clicks for SPA navigation (no full
+reload), and tracks Back/Forward. The route templates are inert to the core
+runtime, so this is a tiny add-on — the `spark-html` core stays router-free.
+
+## Reactive active route
+
+The router publishes the current path to a built-in `route` store, so any
+component can highlight the active link (or set the title, fire analytics, …)
+with `useStore('route')` — no manual `popstate`/`pushState` wiring:
+
+```html
+<!-- components/site-nav.html -->
+<nav>
+  <a href="/"       class="link {homeActive}">Home</a>
+  <a href="/about"  class="link {aboutActive}">About</a>
+</nav>
+
+<script>
+  const route = useStore('route');
+  let homeActive = '', aboutActive = '';
+  $: homeActive  = route.path === '/'      ? 'active' : '';
+  $: aboutActive = route.path === '/about' ? 'active' : '';
+</script>
+```
 
 ## Install
 

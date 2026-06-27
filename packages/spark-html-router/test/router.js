@@ -23,7 +23,7 @@ const fireClick = (a) => {
 const firePopstate = () => listeners.popstate.forEach((f) => f({ type: 'popstate' }));
 
 // Share ONE spark-html instance with the router (bare specifier → workspace).
-const { mount, component } = await import('spark-html');
+const { mount, component, store } = await import('spark-html');
 const { router, navigate } = await import('../src/index.js');
 
 let pass = 0, fail = 0;
@@ -35,7 +35,8 @@ const tick = () => new Promise((r) => setTimeout(r, 5));
 const has = (s) => assert.ok(body.textContent.includes(s), `expected page to show: ${s}\n  got: ${body.textContent.slice(0, 120)}`);
 const hasnt = (s) => assert.ok(!body.textContent.includes(s), `did NOT expect: ${s}`);
 
-component('home', `<h1>Home page</h1>`);
+globalThis.__homeMounts = 0;
+component('home', `<h1>Home page</h1><script>onMount(() => { globalThis.__homeMounts++; });<\/script>`);
 component('about', `<h1>About us</h1>`);
 component('projects', `<h1>Our projects</h1>`);
 component('notfound', `<h1>404 missing</h1>`);
@@ -56,11 +57,18 @@ await test('renders the route matching the initial URL ("/")', () => {
   has('Home page');
   hasnt('About us');
 });
+await test('boots each route component exactly once (single mount)', () => {
+  assert.equal(globalThis.__homeMounts, 1, `onMount should fire once, fired ${globalThis.__homeMounts}×`);
+});
+await test('exposes a reactive `route` store with the active path', () => {
+  assert.equal(store('route').path, '/', 'route store reflects the initial URL');
+});
 await test('navigate() swaps the route, removing the old one', async () => {
   await navigate('/about');
   await tick();
   has('About us');
   hasnt('Home page');
+  assert.equal(store('route').path, '/about', 'route store updates on navigation');
 });
 await test('a catch-all route="*" renders for unknown paths', async () => {
   await navigate('/does-not-exist');
