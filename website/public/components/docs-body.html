@@ -66,7 +66,7 @@
       <tr><td>Keyed loops</td><td><code>&lt;template each="row in rows" key="row.id"&gt;…&lt;/template&gt;</code> — reuse nodes by identity across reorders</td></tr>
       <tr><td>Conditional display</td><td><code>&lt;div :hidden="!show"&gt;</code></td></tr>
       <tr><td>Dynamic class</td><td><code>&lt;li :class="done ? 'item done' : 'item'"&gt;</code></td></tr>
-      <tr><td>Two-way binding</td><td><code>&lt;input bind:value="draft"&gt;</code> &nbsp; <code>&lt;input type="checkbox" bind:checked="done"&gt;</code></td></tr>
+      <tr><td>Two-way binding</td><td><code>bind:value</code> (text, number, <code>&lt;select&gt;</code>, contenteditable), <code>bind:checked</code> (checkbox), <code>bind:group</code> (radio)</td></tr>
       <tr><td>Conditional blocks</td><td><code>&lt;template if="show"&gt;…&lt;/template&gt;</code> — nodes enter/leave the DOM</td></tr>
       <tr><td>Slots</td><td><code>&lt;slot&gt;&lt;/slot&gt;</code> &nbsp; <code>&lt;slot name="title"&gt;&lt;/slot&gt;</code> — project caller content</td></tr>
       <tr><td>Escape hatch</td><td><code>&lt;pre spark-ignore&gt;</code> — subtree is never patched; literal <code>{braces}</code> survive</td></tr>
@@ -218,7 +218,7 @@ npx spark-prerender dist/index.html dist/docs.html</pre>
       <tr><td>Block scoping</td><td><code>let</code>/<code>const</code> with a simple identifier inside functions hoist to component scope. Destructuring declarations are untouched and stay local.</td></tr>
       <tr><td>Reactivity depth</td><td>Plain objects/arrays are deeply reactive (mutation re-renders). <code>Map</code>/<code>Set</code>/class instances are not tracked — reassign them to update.</td></tr>
       <tr><td>Loop reconciliation</td><td>Reuse is positional by default; reordering a list without a <code>key</code> keeps nodes in place and rewrites their contents. Add <code>key="…"</code> for identity-stable moves.</td></tr>
-      <tr><td>Coarse store updates</td><td>Component-local state is dependency-tracked (only bindings that read a changed value re-evaluate), but a store write notifies every subscriber for a full (cheap) pass — store reads aren't tracked per key.</td></tr>
+      <tr><td>Coarse store updates</td><td>Stores are deeply reactive (an in-place <code>cart.items.push(x)</code> notifies every subscriber), but each notification re-renders subscribers with a full (cheap) pass — store reads aren't tracked per key the way component-local state is.</td></tr>
     </table>
   </main>
 </div>

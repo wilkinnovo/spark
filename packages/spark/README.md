@@ -75,7 +75,7 @@ The plugin serves component fragments raw and full-reloads when they change.
 | Keyed loops         | `<template each="row in rows" key="row.id">…`    |
 | Scoped styles       | `<style>` auto-scoped to the component           |
 | Global styles       | `:global(body)` / `:global(.x) .y` escapes scoping (anywhere in a selector) |
-| Two-way binding     | `<input bind:value="draft">` / `bind:checked`     |
+| Two-way binding     | `bind:value` (text/number/select/contenteditable), `bind:checked`, `bind:group` (radio) |
 | Reactive statements | `$: doubled = count * 2` — re-runs on change      |
 | Conditional blocks  | `<template if="show">…</template>`                |
 | Slots               | `<slot>` / `<slot name="title">` — project caller content |
@@ -137,11 +137,15 @@ mount();
 <script>
   const cart = useStore('cart');
   function add() {
-    cart.items = [...cart.items, 'thing'];
-    cart.total = cart.total + 4;
+    cart.items.push('thing');   // deep mutation — notifies every subscriber
+    cart.total += 4;
   }
 </script>
 ```
+
+Stores are **deeply reactive**: an in-place mutation (`cart.items.push(x)`,
+`cart.user.name = 'Ada'`) notifies every subscribing component, just like
+component-local state — no need to reassign the whole value.
 
 ### JavaScript
 

@@ -234,5 +234,56 @@ await test('member-path two-way bind still flows to the echo', async () => {
   assert.equal(txt(c.querySelector('.echo')), 'typed');
 });
 
+// ── each-loop gating: a clean loop is skipped; relevant changes still apply ──
+component('loopgate', `
+  <ul>
+    <template each="r in rows" key="r.id">
+      <li class="row">{r.t}{sel === r.id ? '*' : ''}</li>
+    </template>
+  </ul>
+  <p class="n">{n}</p>
+  <button class="bn" onclick="{bumpN}">n</button>
+  <button class="bsel" onclick="{pick}">sel</button>
+  <button class="badd" onclick="{add}">add</button>
+  <script>
+    let rows = [{ id: 1, t: 'a' }, { id: 2, t: 'b' }];
+    let sel = 0;
+    let n = 0;
+    function bumpN() { n++; }
+    function pick() { sel = 2; }
+    function add() { rows = [...rows, { id: 3, t: 'c' }]; }
+  </script>
+`);
+parseHTML('<div import="loopgate"></div>', body);
+await mount();
+await tick();
+
+console.log('\neach-loop gating');
+await test('an unrelated change does NOT re-reconcile the loop', async () => {
+  const c = body.querySelector('[name="loopgate"]');
+  const li0 = c.querySelectorAll('.row')[0].childNodes[0];
+  li0.textContent = 'SENTINEL'; // corrupt a row; if the loop re-walks, it's overwritten
+  fire(c.querySelector('.bn'), 'click'); // n++ — nothing to do with rows/sel
+  await tick();
+  assert.equal(txt(c.querySelector('.n')), '1', 'n updated');
+  assert.equal(li0.textContent, 'SENTINEL', 'loop skipped (row not re-walked)');
+});
+await test('a per-row dependency (sel) re-walks the rows', async () => {
+  const c = body.querySelector('[name="loopgate"]');
+  fire(c.querySelector('.bsel'), 'click'); // sel = 2 → row 2 gets '*'
+  await tick();
+  const rows = c.querySelectorAll('.row');
+  assert.equal(rows[1].textContent, 'b*', 'row 2 marked selected');
+  assert.equal(rows[0].textContent, 'a', 'row 1 unchanged');
+});
+await test('changing the array reconciles (new row appears)', async () => {
+  const c = body.querySelector('[name="loopgate"]');
+  fire(c.querySelector('.badd'), 'click');
+  await tick();
+  const rows = c.querySelectorAll('.row');
+  assert.equal(rows.length, 3);
+  assert.equal(rows[2].textContent, 'c');
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

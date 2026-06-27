@@ -577,15 +577,28 @@ function store(name, initial) {
   if (stores.has(name)) return stores.get(name).proxy;
 
   const entry = { state: { ...(initial || {}) }, subscribers: new Set() };
+  const cache = new WeakMap();
+  const notify = () => entry.subscribers.forEach((fn) => fn());
 
   entry.proxy = new Proxy(entry.state, {
     get(target, key) {
       if (key === Symbol.unscopables) return undefined;
-      return target[key];
+      if (key === REACTIVE_STORE) return true;
+      // NB: do NOT expose REACTIVE_RAW here — the component scope's set trap
+      // unwraps REACTIVE_RAW values, which would store the raw state instead
+      // of the reactive store proxy on `const s = useStore(...)`.
+      // Deep reactivity: nested objects/arrays are wrapped so an in-place
+      // mutation (cart.items.push(x), row.done = true) notifies EVERY
+      // subscriber — not just the component that happened to mutate it.
+      return reactify(target[key], notify, cache);
     },
     set(target, key, value) {
+      if (value && typeof value === 'object' && value[REACTIVE_RAW]) {
+        value = value[REACTIVE_RAW];
+      }
+      const prev = target[key];
       target[key] = value;
-      entry.subscribers.forEach((fn) => fn());
+      if (prev !== value) notify();
       return true;
     },
   });
@@ -635,6 +648,9 @@ function subscribeStore(name, componentEl, scopeRef) {
 // and DOM nodes pass straight through, so their internal slots/methods keep
 // working (a proxied Date would throw on .getTime()).
 const REACTIVE_RAW = Symbol('spark.raw');
+// Marks a store proxy so the component scope doesn't re-wrap it (which would
+// bypass the store's own deep reactivity + subscriber notification).
+const REACTIVE_STORE = Symbol('spark.store');
 
 function isPlainContainer(v) {
   if (Array.isArray(v)) return true;
@@ -701,6 +717,8 @@ function reactify(value, onMutate, cache) {
 // trackable key (e.g. `{Math.random()}`) is marked untracked and always
 // re-evaluates. The result is never stale; at worst it does redundant work.
 let captureSet = null;     // Set being filled with the keys a binding reads
+let captureSink = null;    // extra Set that ALSO receives every read (used to
+                           // collect an each-block's full dependency set)
 let gDirtyMode = false;    // is the current walk a targeted (dirty) pass?
 let gDirtyKeys = null;     // keys changed this flush (gating set, live)
 
@@ -735,6 +753,28 @@ function withCapture(node, fn) {
     fn();
   } finally {
     captureSet = prev;
+  }
+  node.__sparkReadKeys = set.size ? set : null;
+}
+
+// Run `fn` collecting EVERY scope key read anywhere inside it (including in
+// nested withCapture leaves) onto `node.__sparkReadKeys`. Used by each/if
+// blocks so the whole block can be skipped in dirty mode when none of the
+// keys it depends on — the array/condition expr AND every per-row binding —
+// changed.
+function withSink(node, fn) {
+  const prev = captureSink;
+  let set = node.__sparkReadKeys;
+  if (set == null) set = new Set();
+  else set.clear();
+  captureSink = set;
+  try {
+    fn();
+  } finally {
+    captureSink = prev;
+    // Propagate to an enclosing block so a nested loop's deps count for the
+    // outer one too.
+    if (prev) for (const k of set) prev.add(k);
   }
   node.__sparkReadKeys = set.size ? set : null;
 }
@@ -981,10 +1021,20 @@ function makeScope(rawCode, componentEl, props = {}) {
     get(target, key) {
       if (key === Symbol.unscopables) return undefined;
       if (Object.prototype.hasOwnProperty.call(builtins, key)) return builtins[key];
-      // Record this read for the binding currently being evaluated (Tier 2).
-      if (captureSet !== null && typeof key === 'string') captureSet.add(key);
+      // Record this read for the binding currently being evaluated (Tier 2),
+      // and for any enclosing each/if block collecting its full dep set.
+      if (typeof key === 'string') {
+        if (captureSet !== null) captureSet.add(key);
+        if (captureSink !== null) captureSink.add(key);
+      }
+      const v = target[key];
+      // A store proxy manages its own deep reactivity and notifies all
+      // subscribers — return it as-is so the component doesn't re-wrap it
+      // (which would route mutations through the component only, bypassing
+      // the store's subscribers).
+      if (v !== null && typeof v === 'object' && v[REACTIVE_STORE]) return v;
       // Wrap plain objects/arrays so in-place mutation re-renders.
-      return reactify(target[key], onMutate, reactiveCache);
+      return reactify(v, onMutate, reactiveCache);
     },
     set(target, key, value) {
       if (typeof key === 'symbol') {
@@ -1196,10 +1246,15 @@ function walkNode(node, scope, isRoot = false) {
     return;
   }
 
-  // each/if anchors drive dynamic structure — never marked static, so the
-  // parent always re-walks them (and they re-run their own reconciler).
+  // each/if anchors drive dynamic structure — never marked static. In dirty
+  // mode they're SKIPPED when none of the keys they depend on (the array /
+  // condition expr AND every per-row or branch binding, collected via the
+  // sink) changed — so an unrelated update no longer re-reconciles a 1000-row
+  // loop. Deep mutations (todos.push) take the full-walk path, so they still
+  // reconcile correctly.
   if (node.hasAttribute('each')) {
-    patchEach(node, scope);
+    if (gDirtyMode && !shouldEval(node)) return;
+    withSink(node, () => patchEach(node, scope));
     return;
   }
 
@@ -1207,7 +1262,8 @@ function walkNode(node, scope, isRoot = false) {
   // the template when truthy, removed when falsy. Unlike :hidden, the
   // nodes genuinely leave the DOM.
   if (node.hasAttribute('if')) {
-    patchIf(node, scope);
+    if (gDirtyMode && !shouldEval(node)) return;
+    withSink(node, () => patchIf(node, scope));
     return;
   }
 
@@ -1467,20 +1523,36 @@ function buildElementPlan(el) {
     // bind:value="draft" / bind:checked="done" — two-way binding.
     // Reading (per patch): push the scope value into the element.
     // Writing (once): input/change event pushes the element value back.
-    if (name === 'bind:value' || name === 'bind:checked') {
-      const prop = name.slice(5); // 'value' | 'checked'
+    if (name === 'bind:value' || name === 'bind:checked' || name === 'bind:group') {
       const expr = value.trim();
-      const eventName = prop === 'checked' ? 'change' : 'input';
+      const tag = (el.tagName || '').toLowerCase();
+      const type = ((el.getAttribute && el.getAttribute('type')) || '').toLowerCase();
+      // Pick the binding mode from the element shape.
+      let mode;
+      if (name === 'bind:checked') mode = 'checked';            // checkbox
+      else if (name === 'bind:group') mode = 'group';           // radio group
+      else if (el.hasAttribute && el.hasAttribute('contenteditable')) mode = 'text';
+      else if (tag === 'select') mode = el.hasAttribute('multiple') ? 'multi' : 'select';
+      else if (type === 'number' || type === 'range') mode = 'number';
+      else mode = 'value';                                      // text input / textarea
+      // change vs input: discrete controls fire `change`, text fires `input`.
+      const eventName = mode === 'value' || mode === 'number' || mode === 'text' ? 'input' : 'change';
       el.addEventListener(eventName, () => {
-        // Simple identifiers and member paths both work:
-        // bind:value="draft" / bind:value="form.email" / bind:value="row.text"
-        execute(`${expr} = __val__`, el.__sparkScopeRef, null, el[prop], {
+        let val;
+        if (mode === 'checked') val = el.checked;
+        else if (mode === 'group') { if (!el.checked) return; val = el.value; }
+        else if (mode === 'number') { const v = el.value; val = v === '' ? null : Number(v); }
+        else if (mode === 'multi') {
+          val = [...(el.selectedOptions || [])].map((o) => o.value);
+        } else if (mode === 'text') val = el.textContent;
+        else val = el.value; // value / select
+        execute(`${expr} = __val__`, el.__sparkScopeRef, null, val, {
           phase: 'bind', component: componentNameFor(el), detail: name + '="' + expr + '"',
         });
         // Member writes don't trip the scope proxy, so re-render explicitly.
         scheduleRerender(el);
       });
-      plan.push({ kind: 'bind', prop, expr });
+      plan.push({ kind: 'bind', mode, expr });
       live = true;
       continue;
     }
@@ -1527,12 +1599,22 @@ function runElementPlan(el, scope) {
   for (const op of el.__sparkPlan) {
     if (op.kind === 'bind') {
       const current = evaluate(op.expr, scope);
-      if (op.prop === 'checked') {
+      const str = current == null ? '' : String(current);
+      if (op.mode === 'checked') {
         const want = Boolean(current);
         if (el.checked !== want) el.checked = want;
+      } else if (op.mode === 'group') {
+        // A radio is checked when the bound value equals this input's value.
+        const want = str === el.value;
+        if (el.checked !== want) el.checked = want;
+      } else if (op.mode === 'multi') {
+        const sel = new Set(Array.isArray(current) ? current.map(String) : []);
+        for (const o of el.options || []) o.selected = sel.has(String(o.value));
+      } else if (op.mode === 'text') {
+        if (el.textContent !== str) el.textContent = str;
       } else {
-        const want = current == null ? '' : String(current);
-        if (el.value !== want) el.value = want;
+        // value / number / select
+        if (el.value !== str) el.value = str;
       }
     } else if (op.kind === 'attr') {
       let result;
