@@ -18,40 +18,54 @@ Core stays tiny; features ship as optional sibling packages (`spark-html-router`
 if it can't live as a sibling package and pays for its bytes.** Everything else
 is `spark-html-*`.
 
+## Progress snapshot
+
+| # | Theme | Status |
+|---|-------|--------|
+| 1 | Zero-build / CDN / URL-import | ✅ **Done** |
+| — | Router: active links + dynamic `:params` + anchor fix | ✅ Done (bonus) |
+| — | `spark-html-theme` package | ✅ Done (bonus) |
+| 2 | Editor + dev tooling | ◻ Not started |
+| 3 | Ergonomic papercuts in core | ◻ Not started |
+| 4 | Capability gaps (motion, nested routes, head helper) | ⏳ Partial |
+| 5 | Trust & quality (e2e, size guard) | ◻ Not started |
+
 ## Priorities
 
-### 1. Zero-build / CDN / URL-import — lean into the one thing nobody else has ⭐ (in progress)
-The sharpest, most under-exploited differentiator. Already true in the code
-(`mount()` fetches components; the package is single-file ESM):
-- `import { mount } from 'https://esm.sh/spark-html'` — no npm, no Vite, no build.
-- Components served as static files; importable **by URL** (`import="https://…/card.html"`).
-- Ship: a documented "no install, no build" quickstart, an `examples/no-build/`
-  that runs on any static server, and URL-import hardening. No other framework
-  (React/Svelte/Vue/Solid) can do this.
+### 1. Zero-build / CDN / URL-import ⭐ — ✅ DONE
+The sharpest differentiator, now productized and live:
+- ✅ `examples/no-build/` — a runnable, tooling-free app (CDN import map + static
+  components), serveable with any static server.
+- ✅ Website home: a tabbed hero with **URL import shown first** — a component
+  fetched **live, cross-origin, from a CDN** (jsDelivr); prerender bakes it from
+  the local copy. Verified live.
+- ✅ "Use it — no build required" section on the home page; "No build / CDN"
+  docs section; README snippet.
+- ✅ URL imports work as-is (`mount()` fetches any URL) — no core change needed.
 
-### 2. Editor + dev tooling — the biggest *adoption* lever, zero uniqueness cost
-- **VS Code extension**: highlight `{expr}`, `$:`, `bind:`, `:attr` in `.html`
-  components; Emmet; surface the runtime warnings as diagnostics.
-- **True HMR**: the Vite plugin does `full-reload` today (state lost on edit) —
+### 2. Editor + dev tooling — ◻ NOT STARTED  ← recommended next
+- ◻ **VS Code extension**: highlight `{expr}`, `$:`, `bind:`, `:attr` in `.html`
+  components; Emmet; surface runtime warnings as diagnostics.
+- ◻ **True HMR**: the Vite plugin still does `full-reload` (state lost on edit) —
   swap-in-place is a dev-only win.
-- **Spark DevTools**: component tree + store state + which bindings re-evaluated
-  (makes "surgical reactivity" visible).
+- ◻ **Spark DevTools**: component tree + store state + which bindings re-evaluated.
 
-### 3. Ergonomic papercuts in core (cheap credibility)
-- **Inline event expressions**: `onclick={count++}` compiles to `count++(event)`
-  and breaks — must detect callable-ref vs statement.
-- Documented quirks: comma `let a='', b=''` chains, `let name` shadowing,
+### 3. Ergonomic papercuts in core — ◻ NOT STARTED
+- ◻ **Inline event expressions**: `onclick={count++}` still compiles to
+  `count++(event)` and breaks — detect callable-ref vs statement.
+- ◻ Documented quirks: comma `let a='', b=''` chains, `let name` shadowing,
   template-literals in attribute exprs, `onsubmit` reactivity.
 
-### 4. Capability gaps — as optional packages, not core
-- `spark-html-motion`: CSS-based `transition:fade`/`:slide` (no compiler).
-- Router: nested routes / layouts; focus management on navigation (a11y).
-- A `head`/meta helper (hand-rolled in novo + the website — wants to be a package).
-- `Map`/`Set` reactivity (only if demanded).
+### 4. Capability gaps — ⏳ PARTIAL (as optional packages, not core)
+- ✅ Router **dynamic routes** (`/blog/:id` → `route.params`) — shipped (0.5.0).
+- ◻ `spark-html-motion`: CSS-based `transition:fade`/`:slide` (no compiler).
+- ◻ Router: **nested routes / layouts**; focus management on navigation (a11y).
+- ◻ A `head`/meta helper (hand-rolled in novo + the website — wants to be a package).
+- ◻ `Map`/`Set` reactivity (only if demanded).
 
-### 5. Trust & quality
-- One real-browser e2e (Playwright): mount → hydrate → router → theme.
-- CI bundle-size guard (fail if `spark-html` gzip exceeds budget).
+### 5. Trust & quality — ◻ NOT STARTED
+- ◻ One real-browser e2e (Playwright): mount → hydrate → router → theme.
+- ◻ CI bundle-size guard (fail if `spark-html` gzip exceeds budget).
 
 ## Guardrails — what to refuse (this is how Spark stays unique)
 
