@@ -207,11 +207,63 @@ function componentNameFor(el) {
   return undefined;
 }
 
+// Find the `}` that closes the interpolation `{` whose body starts at `start`.
+// Brace-aware: respects strings/template-literals (so `${…}` inside a backtick
+// doesn't end it) and nested object braces (`{a ? {x:1} : {y:2}}`). Returns the
+// index of the closing brace, or -1 if unbalanced.
+function interpEnd(src, start) {
+  let depth = 1;
+  let i = start;
+  while (i < src.length) {
+    const c = src[i];
+    if (c === '"' || c === "'" || c === '`') { i = skipString(src, i); continue; }
+    if (c === '{') { depth++; i++; continue; }
+    if (c === '}') { if (--depth === 0) return i; i++; continue; }
+    i++;
+  }
+  return -1;
+}
+
+// Parse a template into a flat list of literal strings and { code } exprs,
+// cached per template string. The old regex (`\{([^}]+)\}`) broke on any `}`
+// inside an expression (template literals, object literals); this doesn't, and
+// caching the parse makes repeated patches cheaper than re-scanning.
+const templateCache = new Map();
+function parseTemplate(template) {
+  let segs = templateCache.get(template);
+  if (segs) return segs;
+  segs = [];
+  let i = 0;
+  let last = 0;
+  while (i < template.length) {
+    if (template[i] === '{') {
+      const end = interpEnd(template, i + 1);
+      if (end === -1) break; // unbalanced — leave the rest as a literal
+      if (i > last) segs.push(template.slice(last, i));
+      segs.push({ code: template.slice(i + 1, end).trim() });
+      i = end + 1;
+      last = i;
+    } else {
+      i++;
+    }
+  }
+  if (last < template.length) segs.push(template.slice(last));
+  templateCache.set(template, segs);
+  return segs;
+}
+
 function interpolate(template, scope) {
-  return template.replace(/\{([^}]+)\}/g, (_, code) => {
-    const v = evaluate(code.trim(), scope);
-    return v == null ? '' : String(v);
-  });
+  if (!template.includes('{')) return template;
+  let out = '';
+  for (const s of parseTemplate(template)) {
+    if (typeof s === 'string') {
+      out += s;
+    } else {
+      const v = evaluate(s.code, scope);
+      out += v == null ? '' : String(v);
+    }
+  }
+  return out;
 }
 
 // ─── Single-file component parser (text level) ────────────────────────
@@ -718,6 +770,43 @@ function skipString(src, i) {
   return i;
 }
 
+// Names declared by `let/const/var`, INCLUDING comma chains
+// (`let a = '', b = '', c`). The old code seeded only the first name, so the
+// rest leaked to the global scope (and weren't reactive). Destructuring
+// (`let {a} = …` / `let [a] = …`) is intentionally skipped — those stay local.
+function extractDeclaredNames(code) {
+  const names = [];
+  const re = /(?:^|[\n;{}])\s*(?:let|const|var)\s+(?=[a-zA-Z_$])/g;
+  let m;
+  while ((m = re.exec(code)) !== null) {
+    let i = m.index + m[0].length; // at the first declarator name
+    let depth = 0;
+    let expectName = true;
+    let lastReal = '';
+    while (i < code.length) {
+      const c = code[i];
+      if (c === '"' || c === "'" || c === '`') { i = skipString(code, i); lastReal = '"'; continue; }
+      if (c === '(' || c === '[' || c === '{') { depth++; lastReal = c; i++; continue; }
+      if (c === ')' || c === ']' || c === '}') { depth--; lastReal = c; i++; continue; }
+      if (depth === 0) {
+        if (c === ';') break;
+        if (c === '\n') { if (lastReal === ',') { i++; continue; } break; }
+        if (c === ',') { expectName = true; lastReal = ','; i++; continue; }
+        if (c === '=') { expectName = false; lastReal = '='; i++; continue; }
+        if (expectName && /[a-zA-Z_$]/.test(c)) {
+          let j = i;
+          while (j < code.length && /[\w$]/.test(code[j])) j++;
+          names.push(code.slice(i, j));
+          expectName = false; lastReal = 'x'; i = j; continue;
+        }
+        if (!/\s/.test(c)) lastReal = c;
+      }
+      i++;
+    }
+  }
+  return names;
+}
+
 // Find the end index of a `$:` statement whose body begins at `start`.
 function reactiveStatementEnd(src, start) {
   let i = start;
@@ -810,11 +899,10 @@ function makeScope(rawCode, componentEl, props = {}) {
 
   // Seed every top-level declared identifier so the proxy `has` trap
   // claims it inside the with() block.
-  const declRe = /(?:^|[\n;{}])\s*(?:let|const|var)\s+([a-zA-Z_$][\w$]*)/g;
   const funcRe =
     /(?:^|[\n;{}])\s*(?:async\s+)?function\s+([a-zA-Z_$][\w$]*)/g;
   let m;
-  while ((m = declRe.exec(codeNoComments)) !== null) raw[m[1]] = undefined;
+  for (const n of extractDeclaredNames(codeNoComments)) raw[n] = undefined;
   while ((m = funcRe.exec(codeNoComments)) !== null) raw[m[1]] = undefined;
   // `$: x = …` implicitly declares x
   for (const stmt of reactiveStmts) {
@@ -832,14 +920,13 @@ function makeScope(rawCode, componentEl, props = {}) {
     (_, before, space, async_ = '', name) =>
       `${before}${space}${name} = ${async_}function ${name}(`,
   );
+  // Strip the `let`/`const`/`var` KEYWORD from declarations that start with an
+  // identifier (single or comma-chained), turning `let a = 1, b = 2` into
+  // `a = 1, b = 2` so every name hits the proxy. Destructuring (`let {…}` /
+  // `let [@…]`) is left intact — it stays block-local, as documented.
   rewritten = rewritten.replace(
-    /(^|[\n;{}])(\s*)(?:let|const|var)\s+([a-zA-Z_$][\w$]*)\s*=/g,
-    (_, before, space, name) => `${before}${space}${name} =`,
-  );
-  // bare declarations without assignment: `let x;` → noop (already seeded)
-  rewritten = rewritten.replace(
-    /(^|[\n;{}])(\s*)(?:let|const|var)\s+([a-zA-Z_$][\w$]*)\s*(;|\n)/g,
-    (_, before, space, _name, end) => `${before}${space}${end}`,
+    /(^|[\n;{}])(\s*)(?:let|const|var)\s+(?=[a-zA-Z_$])/g,
+    (_, before, space) => `${before}${space}`,
   );
 
   // Builtins available inside every component script.
@@ -1401,7 +1488,13 @@ function buildElementPlan(el) {
 
     // :disabled="count >= 10" — dynamic attribute, evaluated each patch.
     if (name.startsWith(':')) {
-      plan.push({ kind: 'attr', name, realAttr: name.slice(1), expr: value });
+      const realAttr = name.slice(1);
+      const op = { kind: 'attr', name, realAttr, expr: value };
+      // `:class` MERGES with the static class instead of replacing it, so
+      // `<div class="card" :class="state">` keeps `card`. Capture the static
+      // class now (before the first :class run overwrites the attribute).
+      if (realAttr === 'class') op.staticClass = el.getAttribute('class') || '';
+      plan.push(op);
       live = true;
       continue;
     }
@@ -1442,10 +1535,14 @@ function runElementPlan(el, scope) {
         );
         continue;
       }
-      if (typeof result === 'boolean') {
+      if (typeof result === 'boolean' && op.staticClass === undefined) {
         result ? el.setAttribute(op.realAttr, '') : el.removeAttribute(op.realAttr);
       } else {
-        const str = String(result ?? '');
+        let str = String(result ?? '');
+        // `:class` merges with the captured static class.
+        if (op.staticClass !== undefined) {
+          str = (op.staticClass + ' ' + str).trim();
+        }
         if (el.getAttribute(op.realAttr) !== str) el.setAttribute(op.realAttr, str);
       }
     } else if (op.kind === 'interp') {

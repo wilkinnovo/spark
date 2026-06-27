@@ -1,0 +1,73 @@
+/** Regression tests for reported quirks: comma-let, template-literal/nested
+ *  interpolation, and :class merging — all end-to-end on the real runtime. */
+import './dom-shim.js';
+import { body, parseHTML } from './dom-shim.js';
+import { strict as assert } from 'node:assert';
+
+const { mount, component, interpolate } = await import('../src/index.js');
+
+let pass = 0, fail = 0;
+async function test(name, fn) {
+  try { await fn(); pass++; console.log(`  ✅ ${name}`); }
+  catch (e) { fail++; console.log(`  ❌ ${name}\n     ${e.message}`); }
+}
+const tick = () => new Promise((r) => setTimeout(r, 5));
+const fire = (el, t) => { let n = el; while (n) { (n._listeners?.[t] || []).forEach((f) => f({ type: t, target: el })); n = n.parentNode; } };
+const txt = (el) => (el ? el.textContent : '');
+
+console.log('\ninterpolate — brace-aware');
+await test('template literal with ${} inside {…}', () => {
+  assert.equal(interpolate('{`hi ${who}!`}', { who: 'you' }), 'hi you!');
+});
+await test('object literal inside {…}', () => {
+  assert.equal(interpolate('{ (cond ? {a:1} : {a:2}).a }', { cond: true }), '1');
+});
+await test('multiple exprs + literals', () => {
+  assert.equal(interpolate('a={x}, b={y}', { x: 1, y: 2 }), 'a=1, b=2');
+});
+
+console.log('\ncomma-separated let');
+component('commalet', `
+  <p class="o">{a}|{b}|{c}</p>
+  <button class="go" onclick="{bump}">x</button>
+  <script>
+    let a = 'A', b = 'B', c = 'C';
+    function bump() { b = 'B2'; }
+  </script>
+`);
+parseHTML('<div import="commalet"></div>', body);
+await mount();
+await tick();
+await test('all comma-chained vars are component state (no global leak)', () => {
+  assert.equal(txt(body.querySelector('[name="commalet"] .o')), 'A|B|C');
+  assert.equal(globalThis.b, undefined, 'b must not leak to globalThis');
+});
+await test('a non-first comma var is reactive', async () => {
+  fire(body.querySelector('[name="commalet"] .go'), 'click');
+  await tick();
+  assert.equal(txt(body.querySelector('[name="commalet"] .o')), 'A|B2|C');
+});
+
+console.log('\n:class merges with static class');
+component('clsmerge', `
+  <div class="card big" :class="state">x</div>
+  <button class="go" onclick="{flip}">x</button>
+  <script>
+    let state = 'active';
+    function flip() { state = 'done'; }
+  </script>
+`);
+parseHTML('<div import="clsmerge"></div>', body);
+await mount();
+await tick();
+await test('static class is preserved and merged with :class', () => {
+  assert.equal(body.querySelector('[name="clsmerge"] div').getAttribute('class'), 'card big active');
+});
+await test(':class update re-merges with the static class', async () => {
+  fire(body.querySelector('[name="clsmerge"] .go'), 'click');
+  await tick();
+  assert.equal(body.querySelector('[name="clsmerge"] div').getAttribute('class'), 'card big done');
+});
+
+console.log(`\n${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

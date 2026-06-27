@@ -239,26 +239,42 @@ export async function prerender(entryPath, options = {}) {
   // mount() awaits DOMContentLoaded only when readyState === 'loading'.
   try { if (document.readyState === 'loading') document.readyState = 'complete'; } catch { /* read-only is fine */ }
 
-  // Timer stubs — ALWAYS on, and they OVERRIDE the real timers. Without this,
-  // a component that starts a setInterval/setTimeout in onMount leaves an open
-  // handle and the build process never exits. Intervals are live-only (no
-  // value at build time) → no-op; timeouts fire once on a microtask (so
-  // deferred state still settles), bounded against runaway recursion.
-  let timeoutBudget = 10000;
+  // Timer handling during prerender. A component that starts a repeating
+  // setInterval in onMount would keep the build process alive forever, so we
+  // no-op intervals (they're live-only — no value at build time). But
+  // setTimeout is left REAL: undici (Node's fetch/WebSocket) drives its own
+  // timeouts through setTimeout and expects a real Timer back — an earlier
+  // stub that returned `0` crashed it (`fastNowTimeout?.unref is not a
+  // function`). We just `.unref()` each timeout so a component's pending
+  // setTimeout can't hold the process open past serialization.
+  const realSetTimeout = globalThis.setTimeout;
+  const fakeTimer = {
+    ref() { return this; }, unref() { return this; },
+    hasRef() { return false; }, refresh() { return this; }, close() {},
+    [Symbol.toPrimitive]() { return 0; },
+  };
   const timerStubs = {
-    setInterval: () => 0,
+    setInterval: () => fakeTimer,
     clearInterval: () => {},
-    setTimeout: (fn) => { if (typeof fn === 'function' && timeoutBudget-- > 0) queueMicrotask(fn); return 0; },
-    clearTimeout: () => {},
+    setTimeout: (fn, ms, ...args) => {
+      const t = realSetTimeout(fn, ms, ...args);
+      if (t && typeof t.unref === 'function') t.unref();
+      return t;
+    },
+    // clearTimeout stays real (left off the stub list so undici can clear).
   };
   // Browser-feature stubs (matchMedia, localStorage, …) — only fill what's
   // absent so any real linkedom implementation is preserved.
   const featureStubs = options.stubBrowserGlobals === false
     ? {}
     : { ...makeBrowserStubs(), ...(options.stubs || {}) };
-  for (const [k, v] of Object.entries(timerStubs)) {
-    try { window[k] = v; } catch { /* read-only */ }
-  }
+  // Only force feature stubs onto `window` — NOT the timer stubs. linkedom's
+  // window writes timer setters straight through to globalThis, so setting
+  // window.setTimeout here (before withGlobals captures the real one) would
+  // make withGlobals stash the stub as "previous" and never restore the real
+  // setTimeout — breaking all timers (and undici) after a prerender. The
+  // timer stubs reach both bare and window.* calls via withGlobals + that same
+  // write-through, and are correctly restored.
   for (const [k, v] of Object.entries(featureStubs)) {
     if (window[k] === undefined) { try { window[k] = v; } catch { /* read-only */ } }
   }
@@ -305,14 +321,21 @@ export async function prerender(entryPath, options = {}) {
 
       // ── Settle loop (design §5): the tree expands in waves — rAF reveals,
       //    and imports inside each/if resolve asynchronously, fetching more
-      //    children. Loop until a full pass does no work.
+      //    children, AND an import inside a template if/each boots in a `.then`
+      //    callback after its fetch. If we stop while one of those is still
+      //    queued, it would run after withGlobals tears the globals down
+      //    (document/requestAnimationFrame undefined). So drain microtasks
+      //    thoroughly and require TWO consecutive fully-idle passes before
+      //    declaring the tree quiet.
       const settle = async () => {
+        let idle = 0;
         for (let pass = 0; pass < maxPasses; pass++) {
           const drained = drainRaf();
-          if (pending.size) await Promise.all([...pending]);
-          await microtaskTurn();
-          await microtaskTurn();
-          if (drained === 0 && pending.size === 0 && rafQueue.length === 0) break;
+          const hadPending = pending.size > 0;
+          if (hadPending) await Promise.all([...pending]);
+          for (let t = 0; t < 4; t++) await microtaskTurn();
+          const quiet = drained === 0 && !hadPending && pending.size === 0 && rafQueue.length === 0;
+          if (quiet) { if (++idle >= 2) break; } else { idle = 0; }
         }
       };
 
