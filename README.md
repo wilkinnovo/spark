@@ -60,7 +60,7 @@ mount();
 
 ```html
 <script type="importmap">
-  { "imports": { "spark-html": "https://esm.sh/spark-html@0.21" } }
+  { "imports": { "spark-html": "https://esm.sh/spark-html@0.22" } }
 </script>
 <div import="components/counter"></div>
 <script type="module">import { mount } from 'spark-html'; mount()</script>
@@ -77,6 +77,7 @@ just files at a URL, so you can even `import` one straight from a CDN. See
 | [`spark-html`](packages/spark/README.md) | The runtime — `mount()`, components, reactivity, stores, scoped styles. ~10kb gzip, 0 deps. |
 | [`spark-html-router`](packages/spark-html-router/README.md) | Declarative routing — `<template route>` + `router()`, active links, a reactive `route` store. |
 | [`spark-html-theme`](packages/spark-html-theme/README.md) | One-line dark/light/system theming — `theme()`, persisted, no flash. |
+| [`spark-html-query`](packages/spark-html-query/README.md) | Declarative async data — a self-fetching reactive store (`loading`/`error`/`data`/`refetch`). |
 | [`spark-prerender`](packages/spark-prerender/README.md) | Build-time SEO prerender — real HTML per route, no SSR server, no app changes. |
 
 ## This repo

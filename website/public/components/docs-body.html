@@ -12,6 +12,7 @@
     <a href="#reactive">Reactivity &amp; lifecycle</a>
     <a href="#props">Props</a>
     <a href="#stores">Stores</a>
+    <a href="#forms">Forms</a>
     <a href="#api">JavaScript API</a>
     <a href="#vite">Vite plugin</a>
     <a href="#editors">Editor support</a>
@@ -41,7 +42,7 @@
     <h3 id="no-build">No build, no install</h3>
     <p>Because components are fetched at runtime and the runtime is a single ES module, you can use Spark with <strong>zero tooling</strong> — straight from a CDN with an import map. No npm, no bundler, no compiler:</p>
     <pre spark-ignore>&lt;script type="importmap"&gt;
-  { "imports": { "spark-html": "https://esm.sh/spark-html@0.21" } }
+  { "imports": { "spark-html": "https://esm.sh/spark-html@0.22" } }
 &lt;/script&gt;
 
 &lt;div import="components/counter"&gt;&lt;/div&gt;
@@ -171,12 +172,55 @@ mount();</pre>
 &lt;/script&gt;</pre>
     <p>Every property assignment on a store re-patches all subscribed components. Subscriptions are cleaned up automatically for components no longer in the DOM.</p>
 
+    <h3 id="derived">Derived stores</h3>
+    <p><code>derived(name, deps, compute)</code> is a <strong>read-only</strong> store computed from other stores — the cross-component answer to a component-local <code>$:</code>. It recomputes when any source changes and only notifies subscribers when a key actually changes (memoized):</p>
+    <pre spark-ignore>// main.js
+import { store, derived } from 'spark-html';
+
+store('cart', { items: [] });
+derived('cartTotal', ['cart'], (cart) =&gt; ({
+  count: cart.items.length,
+  total: cart.items.reduce((s, i) =&gt; s + i.price, 0),
+}));</pre>
+    <p>Read it like any store. <code>compute</code> returns an object whose keys become the derived state; derived stores may even depend on other derived stores. Mutate a <em>source</em> store, never the derived proxy.</p>
+    <pre spark-ignore>&lt;p&gt;{summary.count} items — ${summary.total}&lt;/p&gt;
+&lt;script&gt;const summary = useStore('cartTotal');&lt;/script&gt;</pre>
+
+    <h2 id="forms">Forms</h2>
+    <p><code>bind:form="name"</code> on a <code>&lt;form&gt;</code> creates a reactive <code>name</code> object — <code>{ valid, errors, values, pending, submitted, error }</code> — driven by <strong>native HTML constraint validation</strong> (<code>required</code>, <code>type="email"</code>, <code>pattern</code>, <code>minlength</code>…). Submit is auto-<code>preventDefault</code>'d; an async <code>onsubmit</code> handler is awaited with <code>pending</code> and a rejection is caught into <code>error</code>. No manual flags:</p>
+    <pre spark-ignore>&lt;form bind:form="f" onsubmit={save} novalidate&gt;
+  &lt;input name="email" type="email" required bind:value="email" /&gt;
+  &lt;p :hidden="!(f.submitted &amp;&amp; f.errors.email)"&gt;{f.errors.email}&lt;/p&gt;
+
+  &lt;button type="submit" :disabled="f.pending || !f.valid"&gt;
+    {f.pending ? 'Saving…' : 'Sign up'}
+  &lt;/button&gt;
+  &lt;p :hidden="!f.error"&gt;✗ {f.error?.message}&lt;/p&gt;
+&lt;/form&gt;
+&lt;script&gt;
+  let email = '';
+  async function save() { await api.signup(email); }  // f.pending wraps this
+&lt;/script&gt;</pre>
+    <p>A plain <code>onsubmit={…}</code> on a <code>&lt;form&gt;</code> (without <code>bind:form</code>) is auto-<code>preventDefault</code>'d too — no accidental full-page navigation.</p>
+
+    <h3 id="query">Async data</h3>
+    <p>For data fetching, the optional <code>spark-html-query</code> package adds a <strong>self-fetching store</strong> on top of <code>store()</code> — <code>loading</code> / <code>error</code> / <code>data</code> / <code>fetching</code> / <code>refetch</code> / <code>mutate</code> — read with the same <code>useStore</code>:</p>
+    <pre spark-ignore>// main.js
+import { query } from 'spark-html-query';
+query('user', () =&gt; fetch('/api/user').then((r) =&gt; r.json()));</pre>
+    <pre spark-ignore>&lt;p :hidden="!user.loading"&gt;Loading…&lt;/p&gt;
+&lt;h1 :hidden="user.loading"&gt;{user.data?.name}&lt;/h1&gt;
+&lt;button onclick="{user.refetch}"&gt;Reload&lt;/button&gt;
+&lt;script&gt;const user = useStore('user');&lt;/script&gt;</pre>
+    <p>It pairs with <code>derived()</code> — shape a query into exactly what a view needs, memoized, and it updates as the request settles.</p>
+
     <h2 id="api">JavaScript API</h2>
     <table>
       <tr><th>Export</th><th>Description</th></tr>
       <tr><td><code>mount(root?)</code></td><td>Resolve imports and boot all components. <code>root</code> is a selector or element; defaults to <code>document.body</code>. Returns a promise.</td></tr>
       <tr><td><code>unmount(el)</code></td><td>Tear down a mounted subtree: run its <code>onMount</code> cleanups and drop its store subscriptions. Call before removing a component you mounted imperatively.</td></tr>
       <tr><td><code>store(name, initial?)</code></td><td>Create (or retrieve) a named store. Returns the reactive store object.</td></tr>
+      <tr><td><code>derived(name, deps, compute)</code></td><td>Create a read-only store computed from other stores (by name). Recomputes on source change, memoized per key. Returns the derived store object.</td></tr>
       <tr><td><code>component(name, source)</code></td><td>Register a component from a source string instead of a file. <code>&lt;div import="name"&gt;</code> then resolves to it — useful for tests and inline components.</td></tr>
       <tr><td><code>parseSFC(source)</code></td><td>Split component source into <code>{ markup, script, style }</code>.</td></tr>
       <tr><td><code>evaluate(expr, scope)</code> / <code>interpolate(tpl, scope)</code></td><td>The low-level expression engine, exported for testing.</td></tr>
@@ -253,7 +297,7 @@ npx spark-prerender dist/index.html dist/docs.html</pre>
       <tr><td>Block scoping</td><td><code>let</code>/<code>const</code> with a simple identifier inside functions hoist to component scope. Destructuring declarations are untouched and stay local.</td></tr>
       <tr><td>Reactivity depth</td><td>Plain objects/arrays are deeply reactive (mutation re-renders). <code>Map</code>/<code>Set</code>/class instances are not tracked — reassign them to update.</td></tr>
       <tr><td>Loop reconciliation</td><td>Reuse is positional by default; reordering a list without a <code>key</code> keeps nodes in place and rewrites their contents. Add <code>key="…"</code> for identity-stable moves.</td></tr>
-      <tr><td>Coarse store updates</td><td>Stores are deeply reactive (an in-place <code>cart.items.push(x)</code> notifies every subscriber), but each notification re-renders subscribers with a full (cheap) pass — store reads aren't tracked per key the way component-local state is.</td></tr>
+      <tr><td>Coarse store updates</td><td>Stores are deeply reactive (an in-place <code>cart.items.push(x)</code> notifies every subscriber), but each notification re-renders subscribers with a full (cheap) pass — store reads aren't tracked per key the way component-local state is. For shared computed values, <code>derived()</code> recomputes once and only notifies when a key actually changes (memoized).</td></tr>
     </table>
   </main>
 </div>

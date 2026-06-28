@@ -1,0 +1,83 @@
+<section class="card">
+  <header class="card-header">
+    <h2>Todos <span class="tag">bind:value + each + $:</span></h2>
+    <span class="badge">{doneCount}/{todos.length}</span>
+  </header>
+  <p class="hint">Two-way binding, keyed reconciliation, and reactive statements in action.</p>
+
+  <div class="add-row">
+    <input bind:value="draft" placeholder="What needs doing?" />
+    <button class="primary" :disabled="!draft.trim()" onclick={add}>Add</button>
+  </div>
+
+  <div class="list" :hidden="!todos.length">
+    <template each="todo in todos" key="todo.id">
+      <div class="item" :class="todo.done ? 'done' : ''">
+        <label class="check">
+          <input type="checkbox" bind:checked="todo.done" />
+        </label>
+        <span class="text">{todo.text}</span>
+        <button class="ghost" onclick={remove(todo.id)} title="Delete">✕</button>
+      </div>
+    </template>
+  </div>
+
+  <p class="empty-state" :hidden="todos.length > 0">Nothing yet. Add a todo above.</p>
+</section>
+
+<script>
+  let draft = '';
+  let todos = [
+    { id: 1, text: 'Learn Spark', done: true },
+    { id: 2, text: 'Build something', done: false },
+    { id: 3, text: 'Ship it', done: false },
+  ];
+  let nextId = 4;
+
+  $: doneCount = todos.filter(t => t.done).length;
+
+  function add() {
+    if (!draft.trim()) return;
+    todos = [...todos, { id: nextId++, text: draft.trim(), done: false }];
+    draft = '';
+  }
+
+  function remove(id) {
+    todos = todos.filter(t => t.id !== id);
+  }
+</script>
+
+<style>
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:20px; }
+  .card-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:2px; }
+  .card-header h2 { font-size:15px; font-weight:700; display:flex; align-items:center; gap:8px; }
+  .badge { font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .tag { font-size:10px; font-weight:500; color:var(--spark-ink); border:1px solid var(--border-strong); padding:1px 7px; border-radius:999px; white-space:nowrap; }
+  .hint { font-size:12px; color:var(--muted); margin-bottom:14px; line-height:1.5; }
+
+  .add-row { display:flex; gap:8px; margin-bottom:14px; }
+  .add-row input { flex:1; }
+
+  .list { display:flex; flex-direction:column; gap:6px; }
+  .item {
+    display:flex; align-items:center; gap:10px;
+    padding:8px 10px; border-radius:8px;
+    background:var(--surface-2); border:1px solid var(--border);
+    transition:opacity .15s;
+  }
+  .item.done { opacity:.5; }
+  .text { flex:1; font-size:13px; }
+  .item.done .text { text-decoration:line-through; }
+
+  .check { display:flex; align-items:center; }
+  .check input { width:16px; height:16px; cursor:pointer; }
+
+  .ghost {
+    background:none; border:none; cursor:pointer;
+    color:var(--muted); font-size:14px; padding:2px 6px; border-radius:4px;
+    transition:color .12s, background .12s;
+  }
+  .ghost:hover { color:var(--danger); background:rgba(255,107,107,.1); }
+
+  .empty-state { font-size:12.5px; color:var(--muted-dim); text-align:center; padding:24px 0; }
+</style>

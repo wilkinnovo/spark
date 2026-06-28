@@ -142,12 +142,20 @@ async function main() {
   const pkgPath = join(targetDir, 'package.json');
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
   pkg.name = projectName;
-  // Always start on the newest published spark-html. If the registry can't
-  // be reached, the template's "latest" default still resolves on install.
-  const range = await latestRange('spark-html');
-  if (range && pkg.dependencies && pkg.dependencies['spark-html']) {
-    pkg.dependencies['spark-html'] = range;
-    stdout.write(`${c.dim(`   using spark-html ${range}`)}\n`);
+  // Always start on the newest published versions of the spark packages. If the
+  // registry can't be reached (or a package isn't published yet), the template's
+  // "latest" default still resolves on install.
+  for (const group of ['dependencies', 'devDependencies']) {
+    const deps = pkg[group];
+    if (!deps) continue;
+    for (const name of Object.keys(deps)) {
+      if (name !== 'spark-html' && !name.startsWith('spark-html-') && name !== 'spark-prerender') continue;
+      const range = await latestRange(name);
+      if (range) {
+        deps[name] = range;
+        stdout.write(`${c.dim(`   using ${name} ${range}`)}\n`);
+      }
+    }
   }
   writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
 
@@ -158,7 +166,7 @@ async function main() {
   if (rel !== '.') stdout.write(`  ${c.dim('1.')} cd ${rel}\n`);
   stdout.write(`  ${c.dim(rel !== '.' ? '2.' : '1.')} npm install\n`);
   stdout.write(`  ${c.dim(rel !== '.' ? '3.' : '2.')} npm run dev\n\n`);
-  stdout.write(`${BOLT} Then open the dev server and edit ${c.cyan('public/components/welcome.html')}.\n\n`);
+  stdout.write(`${BOLT} Then open the dev server and edit ${c.cyan('public/components/hero.html')}.\n\n`);
 }
 
 main().catch((err) => bail(err?.message || String(err)));

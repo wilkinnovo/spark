@@ -71,6 +71,18 @@ The sharpest differentiator, now productized and live:
   tests.
 
 ### 4. Capability gaps — ✅ DONE (as optional packages, not core)
+- ✅ **Store-layer `derived()`** — read-only stores computed from other stores,
+  recomputed on source change and memoized per-key (the cross-component answer to
+  component-local `$:`). Chains (derived-of-derived). In core — it's a few lines
+  on top of the store machinery and can't live outside it. (spark-html 0.22.0)
+- ✅ **Declarative forms (`bind:form`)** — a `<form>` exposes reactive
+  `{ valid, errors, values, pending, submitted, error }` from **native** HTML
+  constraint validation; submit auto-`preventDefault`s, awaits an async handler
+  with `pending`, catches a rejection into `error`. Plain `onsubmit` is now
+  auto-`preventDefault`'d too. In core. (spark-html 0.22.0)
+- ✅ **`spark-html-query`** — declarative async data: a self-fetching store
+  (`loading`/`error`/`data`/`fetching`/`refetch`/`mutate`) built on `store()`,
+  one dependency. Pairs with `derived()` for shaped, memoized views. (query 0.1.0)
 - ✅ Router **dynamic routes** (`/blog/:id` → `route.params`) — shipped (0.5.0).
 - ✅ **`spark-html-head`** — reactive `<title>`/`<meta>` per route, 0 deps (0.1.0).
 - ✅ **`Map`/`Set` reactivity** — mutating a Map/Set in state or a store now

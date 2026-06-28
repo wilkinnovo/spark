@@ -1,0 +1,79 @@
+<section class="card">
+  <header class="card-header">
+    <h2>Async Data <span class="tag">template await + onMount</span></h2>
+  </header>
+  <p class="hint">
+    Declarative loading states with <code>once(fetch())</code> — fires once on mount,
+    shows pending, resolved, or error automatically.
+  </p>
+
+  <template await="once(fetchItems())">
+    <p class="state pending">
+      <span class="spinner"></span> Loading items…
+    </p>
+    <template then>
+      <div class="items">
+        <template each="item in await">
+          <div class="item-row">
+            <span class="id">#{item.id}</span>
+            <span>{item.title}</span>
+          </div>
+        </template>
+      </div>
+      <p class="state success">Loaded {await.length} items.</p>
+    </template>
+    <template catch>
+      <p class="state error">⚠️ {await.message}</p>
+    </template>
+  </template>
+</section>
+
+<script>
+  let cache = null;
+
+  async function fetchItems() {
+    if (cache) return cache;
+    await new Promise(r => setTimeout(r, 1500));
+    cache = [
+      { id: 1, title: 'Components are just .html files' },
+      { id: 2, title: 'State is a variable' },
+      { id: 3, title: 'Reactivity is an assignment' },
+      { id: 4, title: 'Stores share state across components' },
+      { id: 5, title: 'The DOM patches itself' },
+    ];
+    return cache;
+  }
+
+  onMount(() => {
+    console.log('[spark] demo-await mounted');
+  });
+</script>
+
+<style>
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:20px; }
+  .card-header { margin-bottom:2px; }
+  .card-header h2 { font-size:15px; font-weight:700; display:flex; align-items:center; gap:8px; }
+  .tag { font-size:10px; font-weight:500; color:var(--spark-ink); border:1px solid var(--border-strong); padding:1px 7px; border-radius:999px; white-space:nowrap; }
+  .hint { font-size:12px; color:var(--muted); margin-bottom:14px; line-height:1.5; }
+  .hint code { font-size:11px; }
+
+  .state { font-size:13px; display:flex; align-items:center; gap:10px; padding:16px 0; margin:0; }
+  .pending { color:var(--muted); }
+  .success { color:var(--muted); margin-top:10px; }
+  .error { color:var(--danger); }
+
+  .spinner {
+    display:inline-block; width:14px; height:14px; border-radius:50%;
+    border:2px solid var(--border-strong); border-top-color:var(--spark);
+    animation:spin .6s linear infinite;
+  }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  .items { display:flex; flex-direction:column; gap:5px; }
+  .item-row {
+    display:flex; align-items:center; gap:12px;
+    padding:7px 10px; border-radius:6px;
+    background:var(--surface-2); font-size:13px;
+  }
+  .id { color:var(--muted-dim); font-size:11px; min-width:22px; font-variant-numeric:tabular-nums; }
+</style>

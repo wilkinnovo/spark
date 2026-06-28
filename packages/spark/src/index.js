@@ -563,6 +563,16 @@ function coerce(v) {
 // ─── Stores: shared reactive state across components ──────────────────
 const stores = new Map();           // name → { state, subscribers }
 
+// Tag a store's state object with its kind ('store' | 'derived' | 'query') so
+// tooling (spark-html-devtools) can label it. Non-enumerable → never shows up
+// in JSON/state dumps. Global-registry symbol so sibling packages (the query
+// package) can stamp their own kind without importing this module's symbol.
+const STORE_KIND = Symbol.for('spark.storeKind');
+function markStoreKind(state, kind) {
+  try { Object.defineProperty(state, STORE_KIND, { value: kind, configurable: true }); }
+  catch { /* frozen target — ignore */ }
+}
+
 /**
  * Create (or get) a named store.
  *
@@ -578,6 +588,7 @@ function store(name, initial) {
   if (stores.has(name)) return stores.get(name).proxy;
 
   const entry = { state: { ...(initial || {}) }, subscribers: new Set() };
+  markStoreKind(entry.state, 'store');
   const cache = new WeakMap();
   const notify = () => entry.subscribers.forEach((fn) => fn());
 
@@ -634,6 +645,71 @@ function subscribeStore(name, componentEl, scopeRef) {
   };
   entry.subscribers.add(cb);
   (componentEl.__sparkStoreUnsubs ||= []).push(() => entry.subscribers.delete(cb));
+  return entry.proxy;
+}
+
+/**
+ * derived(name, deps, compute) — a read-only store computed from other stores.
+ *
+ *   store('cart', { items: [] });
+ *   derived('cartTotal', ['cart'], (cart) => ({
+ *     count: cart.items.length,
+ *     total: cart.items.reduce((s, i) => s + i.price, 0),
+ *   }));
+ *   // any component: const total = useStore('cartTotal'); → {total.count} items
+ *
+ * `compute(...sourceProxies)` returns an object whose keys become the derived
+ * store's state. It recomputes whenever any source notifies, and only notifies
+ * its OWN subscribers when a key actually changes (shallow) — memoizing the
+ * derivation at the store layer, the one place component-local `$:` can't reach
+ * across components. Chains: a derived store may list another derived as a dep.
+ * Read-only — mutate the source store, never the derived proxy.
+ */
+function derived(name, deps, compute) {
+  if (stores.has(name)) return stores.get(name).proxy;
+
+  const sources = (Array.isArray(deps) ? deps : [deps]).map((d) => {
+    if (!stores.has(d)) store(d, {});
+    return stores.get(d);
+  });
+  const entry = { state: {}, subscribers: new Set(), derived: true };
+  markStoreKind(entry.state, 'derived');
+  const cache = new WeakMap();
+  const notify = () => entry.subscribers.forEach((fn) => fn());
+
+  const recompute = () => {
+    let next;
+    try { next = compute(...sources.map((s) => s.proxy)) || {}; }
+    catch (e) { console.warn(`[spark] derived("${name}") compute threw — ${e.message}`); return; }
+    let changed = false;
+    for (const k of Object.keys(next)) {
+      if (entry.state[k] !== next[k]) { entry.state[k] = next[k]; changed = true; }
+    }
+    for (const k of Object.keys(entry.state)) {
+      if (!(k in next)) { delete entry.state[k]; changed = true; }
+    }
+    if (changed) notify();
+  };
+
+  // Recompute whenever any source store notifies. Derived stores live for the
+  // app's lifetime (like stores), so this subscription is never torn down.
+  for (const s of sources) s.subscribers.add(recompute);
+  recompute(); // seed the initial value
+
+  entry.proxy = new Proxy(entry.state, {
+    get(target, key) {
+      if (key === Symbol.unscopables) return undefined;
+      if (key === REACTIVE_STORE) return true;
+      // Read-only: deep-wrap with a no-op onMutate so nested reads work, but an
+      // in-place mutation can't masquerade as a (forbidden) write.
+      return reactify(target[key], () => {}, cache);
+    },
+    set() {
+      console.warn(`[spark] derived("${name}") is read-only — mutate its source store instead.`);
+      return true;
+    },
+  });
+  stores.set(name, entry);
   return entry.proxy;
 }
 
@@ -1237,6 +1313,84 @@ function scheduleRerender(el) {
   }
 }
 
+// ─── Declarative forms: bind:form ─────────────────────────────────────
+// Snapshot a <form>'s native constraint-validation state into a plain object.
+// Validity/messages come from the platform (required, type=email, pattern,
+// minlength…), so there's no validation library — just HTML attributes read
+// back reactively.
+function formStateSnapshot(form) {
+  const errors = {};
+  const values = {};
+  let valid = true;
+  for (const field of form.elements ? [...form.elements] : []) {
+    const fname = field.name;
+    if (!fname) continue;
+    if (field.type === 'checkbox') values[fname] = field.checked;
+    else if (field.type === 'radio') { if (field.checked) values[fname] = field.value; }
+    else values[fname] = field.value;
+    if (typeof field.checkValidity === 'function' && !field.checkValidity()) {
+      valid = false;
+      if (!errors[fname]) errors[fname] = field.validationMessage || 'Invalid';
+    }
+  }
+  return { valid, errors, values };
+}
+
+// Wire `bind:form="name"` on a <form>: maintain a reactive `name` object in the
+// component scope — { valid, errors, values, pending, submitted, error } — and
+// own the submit lifecycle (auto-preventDefault, native validity gate, await an
+// async onsubmit handler with `pending`, catch a rejection into `error`).
+function setupFormBinding(form, stateName, handlerAttr) {
+  const write = (extra) => {
+    const scope = form.__sparkScopeRef;
+    if (!scope) return false;
+    const prev = scope[stateName] || {};
+    const base = formStateSnapshot(form);
+    scope[stateName] = {
+      ...base,
+      pending: prev.pending || false,
+      submitted: prev.submitted || false,
+      error: prev.error || null,
+      ...extra,
+    };
+    return true;
+  };
+
+  // Seed initial state so `{form.valid}` / `:disabled={form.pending}` resolve on
+  // first paint. scopeRef is attached just before the plan builds; if it isn't
+  // ready yet, retry on the next microtask.
+  if (!write({})) queueMicrotask(() => write({}));
+
+  const refresh = (extra) => { if (write(extra)) scheduleRerender(form); };
+  form.addEventListener('input', () => refresh({}));
+  form.addEventListener('change', () => refresh({}));
+
+  form.addEventListener('submit', async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    refresh({ submitted: true });
+    if (typeof form.checkValidity === 'function' && !form.checkValidity()) {
+      const bad = [...(form.elements || [])].find(
+        (f) => f.name && typeof f.checkValidity === 'function' && !f.checkValidity());
+      if (bad && bad.focus) bad.focus(); // native focus-first-invalid, no library
+      return;
+    }
+    if (!handlerAttr || !handlerAttr.startsWith('{') || !handlerAttr.endsWith('}')) return;
+    const expr = handlerAttr.slice(1, -1).trim();
+    const isRef = /^[a-zA-Z_$][\w$]*(?:\.[a-zA-Z_$][\w$]*)*$/.test(expr);
+    refresh({ pending: true, error: null });
+    try {
+      const scope = form.__sparkScopeRef;
+      const r = evaluate(expr, scope);            // a call expr runs here; a bare
+      const value = isRef && typeof r === 'function' ? r() : r; // ref resolves, then call
+      await Promise.resolve(value);
+      refresh({ pending: false, error: null });
+    } catch (err) {
+      refresh({ pending: false, error: err });
+      reportError(err, { phase: 'submit', component: componentNameFor(form), detail: `onsubmit={${expr}}` });
+    }
+  });
+}
+
 // Is a child node already known to be static — i.e. re-walking it can't
 // change anything? Text without `{…}`, fully-static element subtrees, and
 // comments qualify. An each/if anchor (never marked static) and any element
@@ -1269,8 +1423,11 @@ function walkNode(node, scope, isRoot = false) {
     return;
   }
   // Don't reach into a nested component's territory — it self-manages via
-  // its own scheduler, so from here its whole subtree counts as static.
-  if (!isRoot && node.hasAttribute('name')) {
+  // its own scheduler, so from here its whole subtree counts as static. Only a
+  // GENUINE component, though: a native `name=` on a form control (e.g.
+  // `<input name="email">`) is not a boundary, so it keeps patching against the
+  // parent scope (its `bind:value`/`{…}` read the parent's state).
+  if (!isRoot && node.hasAttribute('name') && isSparkComponent(node)) {
     node.__sparkStatic = true;
     return;
   }
@@ -1777,8 +1934,27 @@ function patchEach(el, scope) {
 function buildElementPlan(el) {
   const plan = [];
   let live = false;
+  // Pre-scan: a <form bind:form> captures its onsubmit handler up front and
+  // strips the attribute, so neither the generic on-handler nor the attribute-
+  // interpolation path touches it — bind:form owns the submit lifecycle.
+  let formBinding = null;
+  if (el.hasAttribute && el.hasAttribute('bind:form') && (el.tagName || '').toLowerCase() === 'form') {
+    formBinding = el.getAttribute('onsubmit');
+    if (formBinding != null) el.removeAttribute('onsubmit');
+  }
   for (const attr of [...el.attributes]) {
     const { name, value } = attr;
+
+    // bind:form="signup" on a <form> — declarative form state. Creates a
+    // reactive `signup` object in scope { valid, errors, values, pending,
+    // submitted, error }. Validity is native HTML constraint validation read
+    // back reactively; submit is auto-preventDefault'd and an async onsubmit
+    // handler is awaited with `pending` / caught into `error`. No manual flags.
+    if (name === 'bind:form') {
+      setupFormBinding(el, value.trim(), formBinding);
+      live = true;
+      continue;
+    }
 
     // bind:value="draft" / bind:checked="done" — two-way binding.
     // Reading (per patch): push the scope value into the element.
@@ -1822,10 +1998,17 @@ function buildElementPlan(el) {
     // anything else (`count++`, `pick='b'`, `add(5)`, `x = event.target.value`)
     // is run as an inline statement, with `event` in scope.
     if (/^on\w+$/.test(name) && value.startsWith('{') && value.endsWith('}')) {
+      // (A <form bind:form>'s onsubmit was already captured + stripped by the
+      // pre-scan above, so it never reaches here.)
       const fnExpr = value.slice(1, -1).trim();
       const isRef = /^[a-zA-Z_$][\w$]*(?:\.[a-zA-Z_$][\w$]*)*$/.test(fnExpr);
       const code = isRef ? `${fnExpr}(event)` : fnExpr;
-      el.addEventListener(name.slice(2), (e) => {
+      const evt = name.slice(2);
+      el.addEventListener(evt, (e) => {
+        // A plain onsubmit on a <form> almost always means "handle it in JS" —
+        // preventDefault by default so the page doesn't navigate (long-standing
+        // papercut). Escape hatch: call nothing / use a real <a> for navigation.
+        if (evt === 'submit' && e && e.preventDefault) e.preventDefault();
         execute(code, el.__sparkScopeRef, e, undefined, {
           phase: 'handler', component: componentNameFor(el), detail: name + '={' + fnExpr + '}',
         });
@@ -1928,8 +2111,31 @@ function patchElement(el, scope) {
 }
 
 // ─── Component boot ───────────────────────────────────────────────────
+// Spark marks component hosts with a `name` attribute — but `name` is ALSO a
+// native HTML attribute on form controls (`<input name="email">`, `<select>`,
+// radio groups, `<button name>`…). A bare `name` on such a field is a form
+// field, NOT a component: booting it would give it its own empty scope and
+// strand any `bind:`/`{…}` that reads the parent's state. A genuine component
+// always carries source — a resolved import, attached SFC script/style, an
+// inline <script>/<style> child, or (once booted) its own scope. This
+// distinguishes the two everywhere `[name]` is treated as a component.
+function isSparkComponent(el) {
+  if (el.__sparkScope !== undefined) return true;       // already booted
+  if (el.__sparkBooted) return true;                    // booting now
+  if (el.__sparkImportPath !== undefined) return true;  // resolved import host
+  if (el.__sparkScriptSrc !== undefined) return true;   // SFC source attached
+  if (el.__sparkStyleSrc !== undefined) return true;
+  if (el.childNodes) {                                  // legacy inline component
+    for (const c of el.childNodes) {
+      if (c.nodeType === Node.ELEMENT_NODE && (c.tagName === 'SCRIPT' || c.tagName === 'STYLE')) return true;
+    }
+  }
+  return false;
+}
+
 function bootComponent(el) {
   if (el.__sparkBooted) return;
+  if (!isSparkComponent(el)) return; // a bare native `name=` (form field) — skip
   el.__sparkBooted = true;
 
   const tag = el.getAttribute('name');
@@ -2279,9 +2485,10 @@ async function mount(root = document.body, options = {}) {
       root.querySelectorAll('[data-spark-cloak]').forEach(reveal);
     }
     if (!options.quiet && !(typeof globalThis !== 'undefined' && globalThis.__SPARK_PRERENDER__)) {
-      console.log(
-        `[spark] ⚡ ready — ${root.querySelectorAll('[name]').length} component(s)`,
-      );
+      // Count genuine components only — a booted component carries __sparkScope,
+      // so a form field's native `name=` doesn't inflate the tally.
+      const count = [...root.querySelectorAll('[name]')].filter((e) => e.__sparkScope !== undefined).length;
+      console.log(`[spark] ⚡ ready — ${count} component(s)`);
     }
   };
 
@@ -2335,5 +2542,5 @@ function inspectStores() {
   return out;
 }
 
-export { mount, unmount, component, store, evaluate, interpolate, parseSFC, scopeCss, inspectStores, lifecycle };
-export default { mount, unmount, component, store };
+export { mount, unmount, component, store, derived, evaluate, interpolate, parseSFC, scopeCss, inspectStores, lifecycle };
+export default { mount, unmount, component, store, derived };

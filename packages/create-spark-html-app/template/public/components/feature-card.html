@@ -1,0 +1,30 @@
+<article class="fcard" :style="'--accent:' + color">
+  <div class="fcard-icon"><slot name="icon">✦</slot></div>
+  <div class="fcard-body">
+    <h3>{title}</h3>
+    <p>{description}</p>
+  </div>
+</article>
+
+<script>
+  export let title = 'Feature';
+  export let description = '';
+  export let color = 'var(--spark)';
+</script>
+
+<style>
+  .fcard {
+    background:var(--surface-2); border:1px solid var(--border);
+    border-radius:10px; padding:16px;
+    display:flex; gap:14px; align-items:flex-start;
+    border-left:3px solid var(--accent, var(--spark));
+  }
+  .fcard-icon {
+    font-size:22px; line-height:1; flex-shrink:0;
+    width:36px; height:36px; display:flex; align-items:center; justify-content:center;
+    background:var(--bg); border-radius:8px;
+  }
+  .fcard-body { flex:1; min-width:0; }
+  .fcard-body h3 { font-size:13px; font-weight:600; margin-bottom:3px; }
+  .fcard-body p { font-size:12px; color:var(--muted); line-height:1.5; }
+</style>

@@ -77,6 +77,32 @@ export function component(name: string, source: string): void;
 export function store<T extends object>(name: string, initial?: T): T;
 
 /**
+ * Create (or get) a named, **read-only** store computed from other stores.
+ * `compute` receives the source store proxies (resolved from `deps`, a list of
+ * store names) and returns an object whose keys become the derived store's
+ * state. It recomputes whenever any source changes and only notifies its own
+ * subscribers when a key actually changes — memoized derivation at the store
+ * layer, shared across components. Read it like any store (`useStore` / pass to
+ * components); never mutate the returned proxy. Derived stores may depend on
+ * other derived stores.
+ *
+ * Create derived stores BEFORE calling {@link mount}.
+ *
+ * ```ts
+ * store('cart', { items: [] as Item[] });
+ * derived('cartTotal', ['cart'], (cart: { items: Item[] }) => ({
+ *   count: cart.items.length,
+ *   total: cart.items.reduce((s, i) => s + i.price, 0),
+ * }));
+ * ```
+ */
+export function derived<T extends object>(
+  name: string,
+  deps: string[] | string,
+  compute: (...sources: any[]) => T,
+): Readonly<T>;
+
+/**
  * Evaluate a single JS expression against a scope object. Returns `''` if the
  * expression throws or fails to compile (Spark renders broken expressions as
  * empty). Primarily an internal/advanced helper.
@@ -128,5 +154,6 @@ declare const _default: {
   unmount: typeof unmount;
   component: typeof component;
   store: typeof store;
+  derived: typeof derived;
 };
 export default _default;

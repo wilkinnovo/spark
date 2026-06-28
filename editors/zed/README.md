@@ -13,6 +13,18 @@ so interpolations get real grammar nodes and highlight correctly. (Spark uses
 `<template if/each/await>` instead of Svelte's `{#if}` blocks, so none of the
 Svelte-specific block syntax appears.)
 
+Because highlighting is **grammar-based**, the full current Spark surface works
+with no extra configuration — it's all HTML attributes plus injected JS:
+
+- Directives: `:attr` (`:disabled`, `:class`, `:style`), `bind:value` /
+  `bind:checked` / `bind:group` / **`bind:form`**, `on*` handlers, `import`,
+  `each` / `if` / `await` / `then` / `catch` / `key` / `slot` on `<template>`.
+- In `<script>` and every `{interpolation}`: the runtime API and store helpers —
+  `useStore`, `store`, **`derived`**, `onMount`, **`query`** (from
+  `spark-html-query`) — highlight as ordinary JavaScript.
+
+New runtime/package features therefore need no extension update to highlight.
+
 ## Install (dev extension)
 
 1. Zed → command palette → **`zed: install dev extension`**

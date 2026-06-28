@@ -25,21 +25,14 @@ Run it with no name to be prompted:
 npm create spark-html-app@latest
 ```
 
-## What you get
 
-```
-my-app/
-├── index.html              ← import placeholder + boot script
-├── src/main.js             ← mount() + a shared store
-├── public/components/
-│   ├── app.html            ← theme + shell
-│   └── welcome.html        ← reactive welcome screen (counter, store, derived state)
-├── vite.config.js          ← spark-html/vite plugin
-└── package.json
-```
-
+The scaffold is a live tour of Spark's best features — reactive counters,
+todo lists with two-way binding and keyed reconciliation, slot-based
+composition, async declarative loading states, and shared stores with
+derived values — all in the same monospace dark/light design as the
+[Spark website](https://wilkinnovo.github.io/spark).
 Everything is plain HTML and JavaScript — no compiler, no virtual DOM, no
-proprietary file format. Edit a component, save, and the page reloads.
+proprietary file format. Edit a component, save, and the page updates.
 
 ## License
 

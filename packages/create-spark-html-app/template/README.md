@@ -3,15 +3,15 @@
 A starter built with [spark-html](https://github.com/wilkinnovo/spark) — single-file
 HTML components with built-in reactivity. No compiler, no virtual DOM, no build step.
 
+The scaffold is a live tour of Spark's core features — edit any component and
+save to see it update instantly.
+
 ## Develop
 
 ```bash
 npm install
 npm run dev
 ```
-
-Open the dev server and edit `public/components/welcome.html`. Save, and the
-page reloads instantly.
 
 ## Build (SEO-ready)
 
@@ -35,22 +35,24 @@ interactivity. Set page metadata as plain component state:
 
 Don't need SEO? Remove the `prerender(...)` plugin from `vite.config.js`.
 
-## How it's wired
+## What's inside
 
-```
-.
-├── index.html              ← <div import="components/app"> + boot script
-├── src/main.js             ← mount() + a shared store
-├── public/components/      ← your components (plain .html files)
-│   ├── app.html            ← theme + shell
-│   └── welcome.html        ← the live reactive welcome screen
-└── vite.config.js          ← spark-html/vite + spark-prerender/vite (SEO)
-```
+The scaffold's components in `public/components/` each demonstrate a Spark feature
+(all using only the published runtime — no experimental APIs):
+
+| Component | Features shown |
+|---|---|
+| `hero.html` | Local state, `$:` reactive statements, stores (`useStore`), theme toggle |
+| `demo-todo.html` | `bind:value`/`bind:checked`, `<template each>` with `key`, `$:` derived counts |
+| `demo-props.html` | `export let` props, named `<slot>`, component composition |
+| `demo-await.html` | `<template await>` with `once()`, `onMount`, loading/then/catch states |
+| `feature-card.html` | Reusable card via `export let` + `<slot>`, used by `demo-props` |
 
 A component is a `.html` file with optional `<script>` and `<style>`. Top-level
 variables are reactive state — assigning to one re-patches that component's DOM.
-Derive values with `$:`, share state across components with `useStore(name)`,
-and pass props as attributes on the `import` placeholder.
+Derive values with `$:`, share state across components with `useStore(name)`, use
+`bind:value` for two-way binds, and pass props as attributes on the `import`
+placeholder.
 
-See the [full docs](https://github.com/wilkinnovo/spark#readme) for the
-complete template syntax reference.
+See the [full docs](https://wilkinnovo.github.io/spark/docs) for the complete
+template syntax reference.

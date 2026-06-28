@@ -85,6 +85,7 @@ export function devtools(options = {}) {
     [data-spark-devtools] .sdt-sec{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#666;margin:12px 0 6px}
     [data-spark-devtools] .sdt-item{border-left:2px solid #1a1a1a;padding:2px 0 2px 10px;margin:4px 0}
     [data-spark-devtools] .sdt-name{color:${AMBER}}
+    [data-spark-devtools] .sdt-badge{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#0c0c0c;background:${AMBER};border-radius:3px;padding:1px 4px;margin-left:6px;vertical-align:middle}
     [data-spark-devtools] pre{margin:2px 0 0;white-space:pre-wrap;color:#aaa;font-size:11px}
     .sdt-flash{outline:1px solid ${AMBER} !important;outline-offset:-1px;transition:outline .15s}`;
   document.head.appendChild(style);
@@ -100,8 +101,13 @@ export function devtools(options = {}) {
     const stores = inspectStores();
     const comps = components();
     meta.textContent = `${comps.length} comp · ${patches} patches`;
-    const storeRows = Object.keys(stores).map((n) =>
-      `<div class="sdt-item"><span class="sdt-name">${esc(n)}</span><pre>${esc(safe(stores[n]))}</pre></div>`).join('') || '<div class="sdt-item">—</div>';
+    const storeRows = Object.keys(stores).map((n) => {
+      // Stores tag their kind (store | derived | query) with a global-registry
+      // symbol — surface it as a small badge so derived/query state is legible.
+      const kind = stores[n] && stores[n][Symbol.for('spark.storeKind')];
+      const badge = kind && kind !== 'store' ? ` <span class="sdt-badge">${esc(kind)}</span>` : '';
+      return `<div class="sdt-item"><span class="sdt-name">${esc(n)}</span>${badge}<pre>${esc(safe(stores[n]))}</pre></div>`;
+    }).join('') || '<div class="sdt-item">—</div>';
     const compRows = comps.map((c) =>
       `<div class="sdt-item"><span class="sdt-name">${esc(c.name)}</span><pre>${esc(safe(c.state))}</pre></div>`).join('') || '<div class="sdt-item">—</div>';
     panelBody.innerHTML =

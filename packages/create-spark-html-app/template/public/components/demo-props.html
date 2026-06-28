@@ -1,0 +1,32 @@
+<section class="card">
+  <header class="card-header">
+    <h2>Slots + Props <span class="tag">export let + slot</span></h2>
+  </header>
+  <p class="hint">Components receive content through slots and data through props — both shown here with reusable cards.</p>
+
+  <div class="feature-grid">
+    <div import="components/feature-card" title="Reactive" description="Assign a variable and the DOM updates — that's the whole model." color="#ffd24a">
+      <span slot="icon">⚡</span>
+    </div>
+    <div import="components/feature-card" title="Zero Build" description="No compiler, no bundler. Components are fetched and booted live." color="#6ee7b7">
+      <span slot="icon">📄</span>
+    </div>
+    <div import="components/feature-card" title="Small Runtime" description="~10 KB gzip with zero dependencies. Ships what you need." color="#60a5fa">
+      <span slot="icon">📦</span>
+    </div>
+    <div import="components/feature-card" title="Scoped Styles" description="CSS is scoped per component automatically. :global() when you need out." color="#f472b6">
+      <span slot="icon">🎨</span>
+    </div>
+  </div>
+</section>
+
+<style>
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:20px; }
+  .card-header { margin-bottom:2px; }
+  .card-header h2 { font-size:15px; font-weight:700; display:flex; align-items:center; gap:8px; }
+  .tag { font-size:10px; font-weight:500; color:var(--spark-ink); border:1px solid var(--border-strong); padding:1px 7px; border-radius:999px; white-space:nowrap; }
+  .hint { font-size:12px; color:var(--muted); margin-bottom:14px; line-height:1.5; }
+
+  .feature-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  @media (max-width:500px) { .feature-grid { grid-template-columns:1fr; } }
+</style>

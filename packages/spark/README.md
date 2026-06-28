@@ -180,10 +180,66 @@ Stores are **deeply reactive**: an in-place mutation (`cart.items.push(x)`,
 `cart.user.name = 'Ada'`) notifies every subscribing component, just like
 component-local state — no need to reassign the whole value.
 
+### Derived stores
+
+`derived(name, deps, compute)` is a **read-only** store computed from other
+stores — the cross-component answer to component-local `$:`. It recomputes when
+any source changes and only notifies when a key actually changes (memoized):
+
+```js
+// main.js
+store('cart', { items: [] });
+derived('cartTotal', ['cart'], (cart) => ({
+  count: cart.items.length,
+  total: cart.items.reduce((s, i) => s + i.price, 0),
+}));
+```
+
+```html
+<!-- any component -->
+<p>{summary.count} items — ${summary.total}</p>
+<script>const summary = useStore('cartTotal');</script>
+```
+
+`compute` returns an object whose keys become the derived store's state. Derived
+stores may depend on other derived stores (they chain). Mutate a **source**
+store, never the derived proxy.
+
+### Forms (`bind:form`)
+
+`bind:form="name"` on a `<form>` creates a reactive `name` object —
+`{ valid, errors, values, pending, submitted, error }` — driven by **native HTML
+constraint validation** (`required`, `type="email"`, `pattern`, `minlength`…).
+Submit is auto-`preventDefault`'d; an async `onsubmit` handler is awaited with
+`pending` and a rejection is caught into `error`. No manual flags:
+
+```html
+<form bind:form="f" onsubmit={save} novalidate>
+  <input name="email" type="email" required bind:value="email" />
+  <p :hidden="!(f.submitted && f.errors.email)">{f.errors.email}</p>
+
+  <button type="submit" :disabled="f.pending || !f.valid">
+    {f.pending ? 'Saving…' : 'Sign up'}
+  </button>
+  <p :hidden="!f.error">✗ {f.error?.message}</p>
+</form>
+<script>
+  let email = '';
+  async function save() { await api.signup(email); }  // f.pending wraps this
+</script>
+```
+
+> A plain `onsubmit={…}` on a `<form>` (without `bind:form`) is also
+> auto-`preventDefault`'d now — no more accidental full-page navigation.
+
+For **async data**, [`spark-html-query`](https://www.npmjs.com/package/spark-html-query)
+adds a self-fetching store (`loading` / `error` / `data` / `refetch`) on top of
+`store()`.
+
 ### JavaScript
 
 ```js
-import { mount, unmount, component, store } from 'spark-html';
+import { mount, unmount, component, store, derived } from 'spark-html';
 
 await mount();          // whole document
 await mount('#app');    // a subtree
