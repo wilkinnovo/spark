@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 330" width="880" height="330" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" role="img" aria-label="Spark — HTML that reacts. Single-file reactive components: no compiler, no virtual DOM, no build step.">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="0%" r="80%">
+      <stop offset="0%" stop-color="#ffd24a" stop-opacity="0.22"/>
+      <stop offset="45%" stop-color="#ffd24a" stop-opacity="0.04"/>
+      <stop offset="100%" stop-color="#ffd24a" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="reacts" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#ffd24a"/>
+    </linearGradient>
+    <pattern id="grid" width="44" height="44" patternUnits="userSpaceOnUse">
+      <path d="M44 0H0V44" fill="none" stroke="#ffd24a" stroke-opacity="0.05" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="880" height="330" fill="#000000"/>
+  <rect width="880" height="330" fill="url(#grid)"/>
+  <rect width="880" height="330" fill="url(#glow)"/>
+  <rect x="0" y="328" width="880" height="2" fill="#ffd24a" opacity="0.5"/>
+
+  <!-- wordmark -->
+  <text x="440" y="70" text-anchor="middle" font-size="21" font-weight="700" fill="#ffffff" letter-spacing="7">
+    <tspan fill="#ffd24a">⚡</tspan> SPARK
+  </text>
+
+  <!-- headline -->
+  <text x="440" y="158" text-anchor="middle" font-size="58" font-weight="800" letter-spacing="-2">
+    <tspan fill="#ffffff">HTML that </tspan><tspan fill="url(#reacts)">reacts.</tspan>
+  </text>
+
+  <!-- subline -->
+  <text x="440" y="196" text-anchor="middle" font-size="15.5" fill="#9a9a9a" letter-spacing="0.4">
+    Single-file reactive components &#8212; no compiler &#183; no virtual DOM &#183; no build step
+  </text>
+
+  <!-- the hook -->
+  <text x="440" y="224" text-anchor="middle" font-size="13" fill="#666666" letter-spacing="0.3">
+    The <tspan fill="#cfcfcf">.html</tspan> you save is what runs &#8212; <tspan fill="#ffd24a">import one straight from a URL.</tspan> Nothing else does that.
+  </text>
+
+  <!-- stat chips -->
+  <g font-size="13" font-weight="600">
+    <g>
+      <rect x="160" y="258" width="132" height="36" rx="8" fill="#0b0b0b" stroke="#1c1c1c"/>
+      <text x="226" y="281" text-anchor="middle"><tspan fill="#ffd24a">~10KB</tspan><tspan fill="#888888"> gzip</tspan></text>
+    </g>
+    <g>
+      <rect x="304" y="258" width="120" height="36" rx="8" fill="#0b0b0b" stroke="#1c1c1c"/>
+      <text x="364" y="281" text-anchor="middle"><tspan fill="#ffd24a">0</tspan><tspan fill="#888888"> deps</tspan></text>
+    </g>
+    <g>
+      <rect x="436" y="258" width="140" height="36" rx="8" fill="#0b0b0b" stroke="#1c1c1c"/>
+      <text x="506" y="281" text-anchor="middle"><tspan fill="#ffd24a">10</tspan><tspan fill="#888888"> packages</tspan></text>
+    </g>
+    <g>
+      <rect x="588" y="258" width="132" height="36" rx="8" fill="#0b0b0b" stroke="#1c1c1c"/>
+      <text x="654" y="281" text-anchor="middle"><tspan fill="#ffd24a">0</tspan><tspan fill="#888888"> build step</tspan></text>
+    </g>
+  </g>
+</svg>
