@@ -29,7 +29,7 @@ import { mount, unmount, store } from 'spark-html';
 
 let base = '';
 let rootEl = null;
-let active = null;     // the live outlet element for the current route
+let chain = [];        // outlet chain (outer→inner) for nested routes/layouts
 let routeProxy = null; // the reactive `route` store proxy
 let started = false;
 
@@ -80,96 +80,137 @@ function markActiveLinks() {
   }
 }
 
-// Resolve `path` to a matching <template route> and any captured params.
-// Precedence: an EXACT static route wins; then a DYNAMIC route with `:param`
-// segments (e.g. route="/blog/:id" matches /blog/42 → { id: '42' }); then a
-// `route="*"` catch-all (404). Returns { tpl, params } or null.
-function resolve(path) {
-  const templates = [...rootEl.querySelectorAll('template[route]')];
+// ── Matching (supports nested routes) ─────────────────────────────────
+// The <template route> at a nesting level: route templates of `container` whose
+// nearest enclosing outlet IS that container — so a rendered child outlet's
+// (cloned) templates don't leak up to the parent level.
+function closestOutlet(el) {
+  let n = el.parentNode;
+  while (n && n !== rootEl) {
+    if (n.nodeType === 1 && n.hasAttribute && n.hasAttribute('data-spark-route')) return n;
+    n = n.parentNode;
+  }
+  return null;
+}
+function templatesAt(container) {
+  const owner = container === rootEl ? null : container;
+  return [...container.querySelectorAll('template[route]')].filter((t) => closestOutlet(t) === owner);
+}
+
+// Resolve the best <template route> for `path` at ONE level (inside `container`).
+// Precedence: exact > dynamic (`:param`, full match) > longest LAYOUT prefix (a
+// route that's an ancestor of the path AND contains nested routes) > catch-all.
+// Returns { tpl, params } or null.
+function resolveIn(container, path) {
+  const templates = templatesAt(container);
   const segs = path.split('/').filter(Boolean);
-  let fallback = null;
-  let dynamic = null;
+  let dynamic = null, prefix = null, prefixLen = -1, fallback = null;
   for (const t of templates) {
     const r = t.getAttribute('route');
-    if (r === '*') { fallback = t; continue; }
+    if (r === '*') { if (!fallback) fallback = t; continue; }
     const rp = normalize(r);
-    if (rp === path) return { tpl: t, params: {} }; // exact static — wins
+    if (rp === path) return { tpl: t, params: {} }; // exact — wins
     if (rp.includes(':') && !dynamic) {
       const rsegs = rp.split('/').filter(Boolean);
-      if (rsegs.length !== segs.length) continue;
-      const params = {};
-      let ok = true;
-      for (let i = 0; i < rsegs.length; i++) {
-        if (rsegs[i][0] === ':') {
-          try { params[rsegs[i].slice(1)] = decodeURIComponent(segs[i]); }
-          catch { params[rsegs[i].slice(1)] = segs[i]; }
-        } else if (rsegs[i] !== segs[i]) { ok = false; break; }
+      if (rsegs.length === segs.length) {
+        const params = {}; let ok = true;
+        for (let i = 0; i < rsegs.length; i++) {
+          if (rsegs[i][0] === ':') {
+            try { params[rsegs[i].slice(1)] = decodeURIComponent(segs[i]); }
+            catch { params[rsegs[i].slice(1)] = segs[i]; }
+          } else if (rsegs[i] !== segs[i]) { ok = false; break; }
+        }
+        if (ok) dynamic = { tpl: t, params };
       }
-      if (ok) dynamic = { tpl: t, params };
+    }
+    // Layout prefix: an ancestor route that itself contains nested routes.
+    if (rp !== '/' && rp !== path && path.startsWith(rp + '/') && rp.length > prefixLen
+        && t.content && t.content.querySelector && t.content.querySelector('template[route]')) {
+      prefix = { tpl: t, params: {} }; prefixLen = rp.length;
     }
   }
-  return dynamic || (fallback ? { tpl: fallback, params: {} } : null);
+  return dynamic || prefix || (fallback ? { tpl: fallback, params: {} } : null);
 }
 
-// Clone the matching <template route> into a fresh outlet element and insert
-// it after the template. The caller mounts it. Returns { outlet, params }, or
-// null when there's no matching route and no catch-all.
-function buildOutlet(path) {
-  const m = resolve(path);
-  if (!m) return null;
-  const outlet = document.createElement('div');
-  outlet.setAttribute('data-spark-route', path);
-  // Clone the template's children in (appendChild of a DocumentFragment is
-  // unreliable across DOM impls, so copy node by node).
-  for (const child of [...m.tpl.content.childNodes]) outlet.appendChild(child.cloneNode(true));
-  m.tpl.after(outlet);
-  return { outlet, params: m.params };
+function sameParams(a, b) {
+  const ak = Object.keys(a || {}), bk = Object.keys(b || {});
+  return ak.length === bk.length && ak.every((k) => a[k] === b[k]);
 }
 
-// Initial render, folded INTO the single mount(). If the page was prerendered
-// the active route is already baked as <div data-spark-route> — adopt it in
-// place so mount() hydrates over it (no flash, no clone, no second mount).
-// Otherwise clone the matching template into an outlet. Either way the one
-// mount(rootEl) that follows resolves its imports and boots it once.
+// Build/adopt the outlet chain for `path`. Parent layouts that still match are
+// REUSED (kept-alive — their state survives child navigation); the chain is
+// rebuilt from the first level that diverges. Returns the shallowest newly-built
+// outlet to mount (or null if everything was reused / adopted).
+function renderChain(path, adopt) {
+  let container = rootEl;
+  const next = [];
+  const allParams = {};
+  let diverged = false;
+  let firstNew = null;
+
+  for (let depth = 0; ; depth++) {
+    const m = resolveIn(container, path);
+    if (!m) break;
+    Object.assign(allParams, m.params);
+
+    const prev = diverged ? null : chain[depth];
+    if (prev && prev.tpl === m.tpl && sameParams(prev.params, m.params) && prev.outlet.isConnected) {
+      next.push(prev);
+      container = prev.outlet;
+      continue;
+    }
+
+    // Divergence — tear down the old chain from this depth down (deepest first).
+    if (!diverged) {
+      for (let i = chain.length - 1; i >= depth; i--) {
+        const o = chain[i] && chain[i].outlet;
+        if (o && o.parentNode) { unmount(o); o.remove(); }
+      }
+      diverged = true;
+    }
+
+    let outlet = null;
+    if (depth === 0 && adopt) {
+      const baked = rootEl.querySelector('[data-spark-route]');
+      if (baked && normalize(baked.getAttribute('data-spark-route')) === path) outlet = baked; // adopt prerender
+      else if (baked) baked.remove();
+    }
+    if (!outlet) {
+      outlet = document.createElement('div');
+      outlet.setAttribute('data-spark-route', path);
+      for (const c of [...m.tpl.content.childNodes]) outlet.appendChild(c.cloneNode(true));
+      m.tpl.after(outlet);
+      if (!firstNew) firstNew = outlet;
+    }
+    next.push({ tpl: m.tpl, params: m.params, outlet });
+    container = outlet;
+  }
+
+  // Nothing diverged but the new chain is shorter → drop trailing old outlets.
+  if (!diverged) {
+    for (let i = chain.length - 1; i >= next.length; i--) {
+      const o = chain[i] && chain[i].outlet;
+      if (o && o.parentNode) { unmount(o); o.remove(); }
+    }
+  }
+
+  chain = next;
+  setRoute(path, allParams);
+  return firstNew;
+}
+
+// Initial render — build/adopt the chain in the DOM; the single mount(rootEl) in
+// router() boots it (an adopted top outlet hydrates; built outlets resolve).
 function prepareInitial() {
-  const path = currentPath();
-  const baked = rootEl.querySelector('[data-spark-route]');
-  if (baked && normalize(baked.getAttribute('data-spark-route')) === path) {
-    active = baked;              // prerendered outlet matches the URL — adopt
-    setRoute(path, (resolve(path) || {}).params || {});
-    return;
-  }
-  if (baked) baked.remove();    // stale outlet (shouldn't happen) — rebuild
-  const built = buildOutlet(path); // no prerendered outlet (dev / SPA-only)
-  active = built ? built.outlet : null;
-  setRoute(path, built ? built.params : {});
+  renderChain(currentPath(), true);
 }
 
-// SPA navigation render: swap the active outlet for the route matching the URL.
-// The new outlet is mounted BEFORE the old one is torn down, so there's no
-// blank frame between routes, and onMount fires once for the new route.
+// SPA navigation — rebuild only the diverging part of the chain, then mount the
+// shallowest new outlet (which cascades to any nested new outlets). Reused
+// parent layouts keep their state.
 async function render() {
-  const path = currentPath();
-  if (active && normalize(active.getAttribute('data-spark-route')) === path) {
-    setRoute(path, (resolve(path) || {}).params || {});
-    markActiveLinks();
-    return; // already showing this route
-  }
-
-  const old = active;
-  const built = buildOutlet(path);
-  const outlet = built ? built.outlet : null;
-  active = outlet;
-  setRoute(path, built ? built.params : {});
-
-  // `quiet` so SPA navigation doesn't reprint the "⚡ ready" banner on every
-  // route change — the initial mount() below already logged the app boot once.
-  if (outlet) await mount(outlet, { quiet: true });  // resolve imports + boot — exactly once
-
-  if (old && old !== outlet) {
-    unmount(old);
-    old.remove();
-  }
+  const firstNew = renderChain(currentPath(), false);
+  if (firstNew) await mount(firstNew, { quiet: true });
   markActiveLinks();
 }
 

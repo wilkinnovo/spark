@@ -27,7 +27,7 @@ is `spark-html-*`.
 | — | `spark-html-theme` package | ✅ Done (bonus) |
 | 2 | Editor + dev tooling — VS Code ✅, HMR ✅, DevTools ✅ (Zed `{}` grammar ⏳) | ✅ Done* |
 | 3 | Ergonomic papercuts — inline handlers ✅, quirks fixed + tested ✅ | ✅ Done |
-| 4 | Capability gaps — head ✅, dynamic routes ✅, Map/Set ✅ / motion, nested ◻ | ⏳ Partial |
+| 4 | Capability gaps — head ✅, dynamic routes ✅, Map/Set ✅, nested routes ✅ / motion ◻ | ⏳ Partial |
 | 5 | Trust & quality — size guard ✅ / e2e ◻ | ⏳ Partial |
 
 ## Priorities
@@ -72,8 +72,10 @@ The sharpest differentiator, now productized and live:
 - ✅ **`spark-html-head`** — reactive `<title>`/`<meta>` per route, 0 deps (0.1.0).
 - ✅ **`Map`/`Set` reactivity** — mutating a Map/Set in state or a store now
   re-renders; methods still run on the real collection (0.21.5).
+- ✅ **Nested routes / layouts** — nest `<template route>`; parent layouts are
+  kept alive across child navigation (state preserved). (router 0.6.0)
 - ◻ `spark-html-motion`: CSS-based `transition:fade`/`:slide` (no compiler).
-- ◻ Router: **nested routes / layouts**; focus management on navigation (a11y).
+- ◻ Router: focus management on navigation (a11y).
 
 ### 5. Trust & quality — ⏳ PARTIAL
 - ✅ CI bundle-size guard — `npm run size` (and part of `npm test`) fails if the

@@ -101,6 +101,27 @@ Precedence: **exact → dynamic → catch-all**. Navigating between two matches 
 the same dynamic route (`/blog/1` → `/blog/2`) re-mounts the route with the new
 params.
 
+## Nested routes & layouts
+
+Nest `<template route>` blocks to build a persistent layout with swappable
+children. A parent route renders whenever the URL is *under* it; the matching
+child renders wherever you place the nested templates:
+
+```html
+<template route="/dash">
+  <div import="components/dash-layout"></div>   <!-- sidebar, header… -->
+  <main>
+    <template route="/dash">          <div import="components/dash-home"></div>     </template>
+    <template route="/dash/settings"> <div import="components/dash-settings"></div> </template>
+  </main>
+</template>
+```
+
+The **parent layout is kept alive** across child navigations — its components
+aren't re-mounted, so layout state (open menus, scroll, form input) survives.
+Only the part of the tree that actually changed is rebuilt. Precedence per level
+is still exact → dynamic → longest layout-prefix → catch-all.
+
 ## SEO / prerender
 
 Pair it with [`spark-prerender`](https://www.npmjs.com/package/spark-prerender):
@@ -111,7 +132,8 @@ adopts the prerendered route with no flash.
 
 ## Notes
 
-- Covers exact routes, dynamic `:param` segments, and a catch-all. Dynamic
-  routes render on the client (their params aren't known at build time, so
-  `spark-prerender` skips them); concrete routes prerender as usual. Nested
-  layouts and wildcard splats (`/docs/*`) are not yet supported.
+- Covers exact routes, dynamic `:param` segments, nested routes/layouts, and a
+  catch-all. Dynamic routes render on the client (their params aren't known at
+  build time, so `spark-prerender` skips them); concrete top-level routes
+  prerender as usual (nested children render on the client). Wildcard splats
+  (`/docs/*`) are not yet supported.
