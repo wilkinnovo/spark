@@ -281,9 +281,12 @@ mount(document.body, { devOverlay: true });   // or set globalThis.__SPARK_DEV_O
    walked once and then skipped, so a patch costs work proportional to the
    *dynamic* nodes, not the whole tree. And while a binding (or `$:`) is
    evaluated the scope records which keys it read, so a plain `count++`
-   re-evaluates only the bindings that read `count` — O(changed). Changes
-   that can't be pinned to a key (deep mutation, store writes, member-path
-   binds) fall back to a full, still-cheap pass — never stale.
+   re-evaluates only the bindings that read `count` — O(changed). It reaches
+   into loops too: mutating one row's item (`todos[i].done = true`) re-walks
+   just that row, not the list (a `$:` aggregate and any out-of-loop read stay
+   correct). Changes that can't be pinned to a row or key (a structural array
+   change, a non-loop deep mutation, store writes, member-path binds) fall back
+   to a full, still-cheap pass — never stale.
 5. Styles are auto-scoped via a `[name="component"]` prefix by a small CSS
    parser: `@media`/`@supports` selectors scope correctly, `@keyframes`/
    `@font-face` are left alone, and `:global(…)` opts out anywhere in a

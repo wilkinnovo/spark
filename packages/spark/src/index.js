@@ -783,13 +783,13 @@ function reactify(value, onMutate, cache) {
       if (v && typeof v === 'object' && v[REACTIVE_RAW]) v = v[REACTIVE_RAW];
       const prev = t[k];
       const ok = Reflect.set(t, k, v);
-      if (ok && prev !== t[k]) onMutate();
+      if (ok && prev !== t[k]) onMutate(t); // `t` = the mutated object (maybe a loop row)
       return ok;
     },
     deleteProperty(t, k) {
       const had = k in t;
       const ok = Reflect.deleteProperty(t, k);
-      if (ok && had) onMutate();
+      if (ok && had) onMutate(t);
       return ok;
     },
   });
@@ -826,6 +826,8 @@ let captureSink = null;    // extra Set that ALSO receives every read (used to
                            // collect an each-block's full dependency set)
 let gDirtyMode = false;    // is the current walk a targeted (dirty) pass?
 let gDirtyKeys = null;     // keys changed this flush (gating set, live)
+let gDirtyItems = null;    // raw loop-row objects deep-mutated this flush — lets
+                           // a `rows[i].x = y` re-walk only row i, not all rows
 
 function setsIntersect(a, b) {
   if (!a || !b) return false;
@@ -1102,16 +1104,25 @@ function makeScope(rawCode, componentEl, props = {}) {
   // a key (deep mutation, store, member-path write). See the dep-tracking
   // section above.
   let dirtyKeys = new Set();
+  // Raw loop-row objects deep-mutated this tick (e.g. `todos[0].done = true`).
+  // These get a surgical re-walk of just their row instead of a full pass.
+  let dirtyItems = new Set();
   let fullDirty = false;
 
   // Per-component cache so each raw object/array maps to one stable
   // reactive proxy (identity-preserving, see reactify).
   const reactiveCache = new WeakMap();
-  // In-place mutation of a plain object/array can't be attributed to a single
-  // top-level key, so it forces a full re-evaluation (never stale).
-  const onMutate = () => {
+  // In-place mutation of a plain object/array. If the mutated object is a live
+  // loop row (tracked in __sparkItems by patchEach), record it so only that row
+  // re-walks. Anything else (a non-loop object, an array/Map/Set, deep nesting)
+  // can't be pinned to a row, so it forces a full pass — never stale.
+  const onMutate = (obj) => {
     if (!ready) return;
-    fullDirty = true;
+    if (obj && componentEl.__sparkItems && componentEl.__sparkItems.has(obj)) {
+      dirtyItems.add(obj);
+    } else {
+      fullDirty = true;
+    }
     schedule();
   };
 
@@ -1240,16 +1251,26 @@ function makeScope(rawCode, componentEl, props = {}) {
     // flush accumulate into a fresh set for the next round.
     const keys = dirtyKeys.size ? dirtyKeys : null;
     dirtyKeys = new Set();
+    const items = dirtyItems.size ? dirtyItems : null;
+    dirtyItems = new Set();
     const wasFull = fullDirty;
     fullDirty = false;
     if (!componentEl.isConnected) return;
 
-    // Dirty mode only when the change set is fully attributable to keys.
-    // The whole update is wrapped: an unforeseen throw in patch/walkNode is
-    // contained to THIS component (logged + overlay) instead of escaping as
-    // an uncaught microtask and silently wedging it.
-    gDirtyMode = !wasFull && !!keys;
+    // Three modes (the update is wrapped so a throw is contained to THIS
+    // component — logged + overlay — instead of wedging it as an uncaught
+    // microtask):
+    //   • dirty-key pass  — only top-level key writes: re-evaluate just the
+    //     bindings that read a changed key (the existing fast path).
+    //   • pure-row pass   — only loop-row deep mutations (`todos[i].done = …`):
+    //     a FULL pass for everything OUTSIDE loops (so a `$:` aggregate or a
+    //     direct `{rows[0].x}` is never stale), but patchEach re-walks ONLY the
+    //     mutated rows — O(changed) instead of O(rows).
+    //   • full pass       — anything else (mixed, store, Map/Set, scheduleFull,
+    //     a non-loop deep mutation): re-walk everything. Never stale.
+    gDirtyMode = !wasFull && !!keys && !items;
     gDirtyKeys = gDirtyMode ? keys : null;
+    gDirtyItems = (!wasFull && items && !keys) ? items : null;
     try {
       runReactive();
       patch(componentEl, scope);
@@ -1259,6 +1280,7 @@ function makeScope(rawCode, componentEl, props = {}) {
     } finally {
       gDirtyMode = false;
       gDirtyKeys = null;
+      gDirtyItems = null;
     }
   }
   function schedule() {
@@ -1871,8 +1893,16 @@ function patchEach(el, scope) {
   const newBlocks = [];
   let insertAfter = el;
 
+  // Track each row's raw item on the owning component, so a deep mutation
+  // (`todos[i].done = …`) can re-walk just that row instead of the whole
+  // component. A WeakSet → dropped rows are collected automatically.
+  const comp = el.__sparkEachComp || (el.__sparkEachComp = closestComponent(el));
+  const items = comp && (comp.__sparkItems || (comp.__sparkItems = new WeakSet()));
+
   arr.forEach((item, i) => {
     const loopScope = makeLoopScope(item, i);
+    const rawItem = (item && item[REACTIVE_RAW]) || item;
+    if (items && rawItem && typeof rawItem === 'object') items.add(rawItem);
     const key = keyOf(item, i, loopScope);
     let block = oldByKey.get(key);
 
@@ -1885,7 +1915,12 @@ function patchEach(el, scope) {
         if (cursor.nextSibling !== n) cursor.after(n);
         cursor = n;
       }
-      for (const n of block.nodes) walkNode(n, loopScope, false);
+      // Pure-row pass (gDirtyItems set): only re-walk a row whose item was
+      // mutated this tick. Otherwise nothing it reads changed, so skip it —
+      // this is what turns O(rows) into O(changed rows).
+      if (!gDirtyItems || gDirtyItems.has(rawItem)) {
+        for (const n of block.nodes) walkNode(n, loopScope, false);
+      }
     } else {
       const nodes = [];
       let cursor = insertAfter;
