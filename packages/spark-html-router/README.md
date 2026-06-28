@@ -58,6 +58,27 @@ component can react with `useStore('route')` (no `popstate`/`pushState` wiring):
 </script>
 ```
 
+## Focus & scroll on navigation (a11y, zero config)
+
+On a forward navigation the router moves keyboard/screen-reader focus into the
+newly rendered view (so users aren't stranded at the top of the old page) and
+resets scroll — to the `#hash` target if the URL has one, otherwise to the top.
+Back/Forward (popstate) is left alone: the browser restores its scroll position
+and focus isn't yanked.
+
+By default the view's root receives focus. To choose a better target (e.g. the
+page heading), mark it:
+
+```html
+<template route="/about">
+  <h1 data-router-focus tabindex="-1">About</h1>
+  …
+</template>
+```
+
+(`[autofocus]` works too.) The router adds a temporary `tabindex="-1"` if needed
+and removes it on blur, so nothing lingers in the DOM or the tab order.
+
 ## Install
 
 ```bash

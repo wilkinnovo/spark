@@ -208,10 +208,50 @@ function prepareInitial() {
 // SPA navigation — rebuild only the diverging part of the chain, then mount the
 // shallowest new outlet (which cascades to any nested new outlets). Reused
 // parent layouts keep their state.
-async function render() {
+async function render(opts = {}) {
   const firstNew = renderChain(currentPath(), false);
   if (firstNew) await mount(firstNew, { quiet: true });
   markActiveLinks();
+  // Back/Forward (popstate) restores scroll itself and shouldn't yank focus;
+  // only a forward navigation resets scroll + moves focus to the new view.
+  if (!opts.isPop) afterNav(firstNew);
+}
+
+// a11y on navigation: send focus to the new view so screen readers announce it
+// and keyboard users resume inside it (not stuck at the top of the old page),
+// and reset scroll (to the #hash target if the URL has one, else to the top).
+// Mark a custom focus target with [data-router-focus] (or [autofocus]).
+function afterNav(firstNew) {
+  if (typeof document === 'undefined') return;
+  const view = firstNew || (chain.length ? chain[chain.length - 1].outlet : null);
+  const hash = location.hash && location.hash.length > 1 ? location.hash : '';
+  const hashEl = hash && document.querySelector ? document.querySelector(hash) : null;
+
+  if (hashEl && hashEl.scrollIntoView) hashEl.scrollIntoView();
+  else if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') window.scrollTo(0, 0);
+
+  const target =
+    hashEl ||
+    (view && view.querySelector && view.querySelector('[data-router-focus], [autofocus]')) ||
+    view;
+  if (!target || typeof target.focus !== 'function') return;
+  // Make it programmatically focusable without adding it to the tab order, then
+  // drop the temporary tabindex once focus leaves so the DOM stays clean.
+  if (target.hasAttribute && !target.hasAttribute('tabindex')) {
+    target.setAttribute('tabindex', '-1');
+    if (target.addEventListener) {
+      const clean = () => {
+        target.removeAttribute && target.removeAttribute('tabindex');
+        target.removeEventListener('blur', clean);
+      };
+      target.addEventListener('blur', clean);
+    }
+  }
+  try {
+    target.focus({ preventScroll: true }); // we already handled scroll above
+  } catch {
+    target.focus();
+  }
 }
 
 // Navigate to a route programmatically (path is route-relative; base is added).
@@ -264,7 +304,7 @@ export async function router(options = {}) {
     : options.root || document.body;
 
   if (typeof document !== 'undefined') document.addEventListener('click', onClick);
-  if (typeof window !== 'undefined') window.addEventListener('popstate', () => render());
+  if (typeof window !== 'undefined') window.addEventListener('popstate', () => render({ isPop: true }));
 
   prepareInitial();      // put the active route's outlet in the DOM (adopt/clone)
   await mount(rootEl);   // ONE mount: chrome + the active route, booted once

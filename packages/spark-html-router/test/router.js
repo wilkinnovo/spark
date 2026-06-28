@@ -154,5 +154,34 @@ await test('Back/Forward (popstate) re-renders the route', async () => {
   hasnt('About us');
 });
 
+// ── a11y: focus + scroll management on navigation ──
+// Teach the shim how to focus + scroll so we can observe afterNav().
+const Element = Object.getPrototypeOf(body).constructor;
+let focused = null;
+Element.prototype.focus = function () { focused = this; };
+const scrolls = [];
+globalThis.window.scrollTo = (x, y) => scrolls.push([x, y]);
+
+await test('forward navigation resets scroll to top and moves focus into the view', async () => {
+  focused = null; scrolls.length = 0;
+  location.hash = '';
+  await navigate('/about');
+  await tick();
+  has('About us');
+  assert.deepEqual(scrolls.at(-1), [0, 0], 'scrolled to top on push nav');
+  assert.ok(focused, 'focus moved to the new view');
+  assert.equal(focused.getAttribute('tabindex'), '-1', 'focus target made programmatically focusable');
+});
+
+await test('popstate does NOT reset scroll or steal focus', async () => {
+  focused = null; scrolls.length = 0;
+  location.pathname = '/projects';
+  firePopstate();
+  await tick();
+  has('Our projects');
+  assert.equal(scrolls.length, 0, 'no scroll reset on Back/Forward');
+  assert.equal(focused, null, 'focus left alone on Back/Forward');
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
