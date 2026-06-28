@@ -660,12 +660,40 @@ function isPlainContainer(v) {
   return proto === Object.prototype || proto === null;
 }
 
+// Mutating methods that should trigger a re-render, per collection type.
+const MAP_MUTATORS = new Set(['set', 'delete', 'clear']);
+const SET_MUTATORS = new Set(['add', 'delete', 'clear']);
+
 function reactify(value, onMutate, cache) {
   // Unwrap any reactive proxy back to its raw target first, so every value
   // maps to one canonical proxy (stable identity, no proxy-of-proxy).
   if (value && typeof value === 'object' && value[REACTIVE_RAW]) {
     value = value[REACTIVE_RAW];
   }
+
+  // Map/Set: wrap so a mutation (set/add/delete/clear) re-renders, while every
+  // method still runs on the REAL collection (internal slots intact — unlike a
+  // naive proxy). Reads (get/has/size/iteration) pass straight through.
+  if (value instanceof Map || value instanceof Set) {
+    const cachedC = cache.get(value);
+    if (cachedC) return cachedC;
+    const mutators = value instanceof Map ? MAP_MUTATORS : SET_MUTATORS;
+    const proxyC = new Proxy(value, {
+      get(t, k) {
+        if (k === REACTIVE_RAW) return t;
+        const v = Reflect.get(t, k);
+        if (typeof v !== 'function') return v;
+        return function (...args) {
+          const r = v.apply(t, args);
+          if (mutators.has(k)) onMutate();
+          return r === t ? proxyC : r; // keep chaining reactive (Map.set returns the map)
+        };
+      },
+    });
+    cache.set(value, proxyC);
+    return proxyC;
+  }
+
   if (!isPlainContainer(value)) return value;
   const cached = cache.get(value);
   if (cached) return cached;

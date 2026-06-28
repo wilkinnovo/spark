@@ -160,5 +160,39 @@ await test('onclick="{reset}" bare reference still called', async () => {
   assert.equal(nval(), '0');
 });
 
+// ── Map / Set reactivity ──
+component('collections', `
+<button class="addtag" onclick="{addTag}">add</button>
+<button class="setk" onclick="{setKey}">set</button>
+<button class="del" onclick="{delTag}">del</button>
+<p class="size">{tags.size}</p>
+<p class="map">{m.get('a') ?? '-'}</p>
+<script>
+  let tags = new Set();
+  let m = new Map();
+  function addTag() { tags.add('x'); tags.add('y'); }
+  function setKey() { m.set('a', 42); }
+  function delTag() { tags.delete('x'); }
+</script>
+`);
+parseHTML('<div import="collections"></div>', body);
+await mount(body);
+await tick();
+
+console.log('\nMap / Set reactivity');
+const col = () => body.querySelector('[name="collections"]');
+await test('Set.add re-renders', async () => {
+  fire(col().querySelector('.addtag'), 'click'); await tick();
+  assert.equal(col().querySelector('.size').textContent, '2');
+});
+await test('Map.set re-renders', async () => {
+  fire(col().querySelector('.setk'), 'click'); await tick();
+  assert.equal(col().querySelector('.map').textContent, '42');
+});
+await test('Set.delete re-renders', async () => {
+  fire(col().querySelector('.del'), 'click'); await tick();
+  assert.equal(col().querySelector('.size').textContent, '1');
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

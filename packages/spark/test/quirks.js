@@ -85,5 +85,22 @@ await test('\\{…\\} renders literal braces alongside real interpolation', () =
   assert.equal(txt(body.querySelector('[name="literalbrace"] .o')), 'use {name} for the field');
 });
 
+// ── let name shadowing + onsubmit reactivity ──
+component('namevar', `<p class="o">{name}</p><script>let name = 'Ada';<\/script>`);
+component('submitform', `<form onsubmit="{go}"><button>x</button></form><p class="o">{n}</p><script>let n = 0; function go(e) { e && e.preventDefault && e.preventDefault(); n++; }<\/script>`);
+parseHTML('<div import="namevar"></div><div import="submitform"></div>', body);
+await mount(body);
+await tick();
+
+console.log('\nscope + events');
+await test('let name does not collide with window.name', () => {
+  assert.equal(txt(body.querySelector('[name="namevar"] .o')), 'Ada');
+});
+await test('onsubmit handler fires and re-renders', async () => {
+  fire(body.querySelector('[name="submitform"] form'), 'submit');
+  await tick();
+  assert.equal(txt(body.querySelector('[name="submitform"] .o')), '1');
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

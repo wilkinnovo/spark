@@ -26,8 +26,8 @@ is `spark-html-*`.
 | — | Router: active links + dynamic `:params` + anchor fix | ✅ Done (bonus) |
 | — | `spark-html-theme` package | ✅ Done (bonus) |
 | 2 | Editor + dev tooling — VS Code ✅, HMR ✅, DevTools ✅ (Zed `{}` grammar ⏳) | ✅ Done* |
-| 3 | Ergonomic papercuts — inline handlers ✅ | ⏳ Partial |
-| 4 | Capability gaps — `spark-html-head` ✅, dynamic routes ✅ / motion, nested ◻ | ⏳ Partial |
+| 3 | Ergonomic papercuts — inline handlers ✅, quirks fixed + tested ✅ | ✅ Done |
+| 4 | Capability gaps — head ✅, dynamic routes ✅, Map/Set ✅ / motion, nested ◻ | ⏳ Partial |
 | 5 | Trust & quality — size guard ✅ / e2e ◻ | ⏳ Partial |
 
 ## Priorities
@@ -59,19 +59,21 @@ The sharpest differentiator, now productized and live:
 > `tree-sitter-spark` parser (a separate, larger effort — VS Code already covers
 > `{}` highlighting).
 
-### 3. Ergonomic papercuts in core — ⏳ PARTIAL
+### 3. Ergonomic papercuts in core — ✅ DONE
 - ✅ **Inline event expressions**: `onclick={count++}` / `{x = e.target.value}` /
-  `{add(5)}` now run as statements; a bare ref (`{fn}` / `{obj.method}`) is still
+  `{add(5)}` run as statements; a bare ref (`{fn}` / `{obj.method}`) is still
   called with the event (0.21.2).
-- ◻ Documented quirks: comma `let a='', b=''` chains, `let name` shadowing,
-  template-literals in attribute exprs, `onsubmit` reactivity.
+- ✅ Documented quirks (comma `let a='', b=''`, `let name` shadowing, template
+  literals in `{…}`, `onsubmit`) were already fixed — now locked with regression
+  tests.
 
 ### 4. Capability gaps — ⏳ PARTIAL (as optional packages, not core)
 - ✅ Router **dynamic routes** (`/blog/:id` → `route.params`) — shipped (0.5.0).
 - ✅ **`spark-html-head`** — reactive `<title>`/`<meta>` per route, 0 deps (0.1.0).
+- ✅ **`Map`/`Set` reactivity** — mutating a Map/Set in state or a store now
+  re-renders; methods still run on the real collection (0.21.5).
 - ◻ `spark-html-motion`: CSS-based `transition:fade`/`:slide` (no compiler).
 - ◻ Router: **nested routes / layouts**; focus management on navigation (a11y).
-- ◻ `Map`/`Set` reactivity (only if demanded).
 
 ### 5. Trust & quality — ⏳ PARTIAL
 - ✅ CI bundle-size guard — `npm run size` (and part of `npm test`) fails if the
