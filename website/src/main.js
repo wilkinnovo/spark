@@ -1,6 +1,7 @@
 import { store } from 'spark-html';
 import { router } from 'spark-html-router';
 import { theme } from 'spark-html-theme';
+import { head } from 'spark-html-head';
 import { highlightAll } from './highlight.js';
 
 // Code samples on Docs/Playground call this from their onMount (idempotent —
@@ -13,6 +14,18 @@ store('app', { base });
 
 // Dark/light/system theming (the ⚡ logo toggles it).
 theme();
+
+// Reactive document title per route (replaces hand-rolled title syncing).
+head({
+  base,
+  title: {
+    '/': 'Spark — HTML that reacts.',
+    '/docs': 'Spark — Documentation',
+    '/playground': 'Spark — Playground',
+    '/showcase': 'Spark — Showcase',
+    '*': 'Spark — HTML that reacts.',
+  },
+});
 
 // Sites built with Spark — rendered on /showcase and teased on Home.
 store('showcase', {

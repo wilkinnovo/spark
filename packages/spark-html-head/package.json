@@ -1,0 +1,35 @@
+{
+  "name": "spark-html-head",
+  "version": "0.1.0",
+  "description": "Reactive document <title> and <meta> per route for spark-html — one line, no dependencies.",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "homepage": "https://wilkinnovo.github.io/spark",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    }
+  },
+  "scripts": {
+    "test": "node test/head.js"
+  },
+  "files": [
+    "src"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wilkinnovo/spark.git",
+    "directory": "packages/spark-html-head"
+  },
+  "keywords": [
+    "spark-html",
+    "head",
+    "title",
+    "meta",
+    "seo",
+    "router"
+  ],
+  "license": "MIT"
+}

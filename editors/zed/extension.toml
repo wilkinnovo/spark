@@ -1,0 +1,13 @@
+id = "spark-html"
+name = "Spark"
+version = "0.1.0"
+schema_version = 1
+authors = ["Wilkin Novo"]
+description = "spark-html single-file component support for Zed (https://zed.dev)."
+repository = "https://github.com/wilkinnovo/spark"
+
+# Reuses the HTML tree-sitter grammar; the language config + queries live in
+# languages/spark/. See README.md for the dedicated-grammar follow-up.
+[grammars.html]
+repository = "https://github.com/tree-sitter/tree-sitter-html"
+rev = "v0.20.4"

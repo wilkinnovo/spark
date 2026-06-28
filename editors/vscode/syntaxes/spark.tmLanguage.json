@@ -1,0 +1,26 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Spark",
+  "scopeName": "spark.injection",
+  "injectionSelector": "L:text.html -comment -(meta.embedded | source)",
+  "patterns": [
+    { "include": "#interpolation" }
+  ],
+  "repository": {
+    "interpolation": {
+      "comment": "Spark {expression} — escaped \\{ is ignored; the body is highlighted as JS.",
+      "name": "meta.embedded.expression.spark",
+      "begin": "(?<!\\\\)\\{",
+      "end": "\\}",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.template-expression.begin.spark" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.template-expression.end.spark" }
+      },
+      "patterns": [
+        { "include": "source.js" }
+      ]
+    }
+  }
+}

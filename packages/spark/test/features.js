@@ -123,5 +123,42 @@ await test('removed again when falsy', async () => {
   assert.equal(body.querySelector('[name="iftest"] .secret'), null);
 });
 
+// ── inline event expressions ──
+component('inlinehandlers', `
+<button class="inc" onclick="{count++}">inc</button>
+<button class="set" onclick="{count = 10}">set</button>
+<button class="call" onclick="{bump(5)}">call</button>
+<button class="ref" onclick="{reset}">ref</button>
+<p class="n">{count}</p>
+<script>
+  let count = 0;
+  function bump(by) { count = count + by; }
+  function reset() { count = 0; }
+</script>
+`);
+parseHTML('<div import="inlinehandlers"></div>', body);
+await mount(body);
+await tick();
+
+console.log('\ninline event expressions');
+const ih = () => body.querySelector('[name="inlinehandlers"]');
+const nval = () => ih().querySelector('.n').textContent;
+await test('onclick="{count++}" runs an inline statement', async () => {
+  fire(ih().querySelector('.inc'), 'click'); await tick();
+  assert.equal(nval(), '1');
+});
+await test('onclick="{count = 10}" inline assignment works', async () => {
+  fire(ih().querySelector('.set'), 'click'); await tick();
+  assert.equal(nval(), '10');
+});
+await test('onclick="{bump(5)}" inline call works', async () => {
+  fire(ih().querySelector('.call'), 'click'); await tick();
+  assert.equal(nval(), '15');
+});
+await test('onclick="{reset}" bare reference still called', async () => {
+  fire(ih().querySelector('.ref'), 'click'); await tick();
+  assert.equal(nval(), '0');
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

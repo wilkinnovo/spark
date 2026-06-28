@@ -52,15 +52,7 @@
   let year = new Date().getFullYear();
   let menuOpen = false;
 
-  // Keep document.title in sync with the active route (client-side nav).
-  const TITLES = {
-    '/': 'Spark — HTML that reacts.',
-    '/docs': 'Spark — Documentation',
-    '/playground': 'Spark — Playground',
-    '/showcase': 'Spark — Showcase',
-  };
-  $: document.title = TITLES[route.path] || 'Spark — HTML that reacts.';
-
+  // (document.title is handled by head() in main.js — spark-html-head.)
   // Close the drawer whenever navigation changes the route.
   let prevPath = route.path;
   $: if (route.path !== prevPath) { prevPath = route.path; menuOpen = false; }

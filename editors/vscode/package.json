@@ -1,0 +1,25 @@
+{
+  "name": "spark-html",
+  "displayName": "Spark (spark-html)",
+  "description": "Syntax highlighting for spark-html single-file components — {interpolations}, bind:, $:, and template directives, on top of HTML.",
+  "version": "0.1.0",
+  "publisher": "wilkinnovo",
+  "engines": { "vscode": "^1.70.0" },
+  "categories": ["Programming Languages"],
+  "keywords": ["spark", "spark-html", "html", "reactive", "components"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wilkinnovo/spark",
+    "directory": "editors/vscode"
+  },
+  "license": "MIT",
+  "contributes": {
+    "grammars": [
+      {
+        "scopeName": "spark.injection",
+        "path": "./syntaxes/spark.tmLanguage.json",
+        "injectTo": ["text.html.basic", "text.html.derivative"]
+      }
+    ]
+  }
+}

@@ -11,7 +11,8 @@
   "dependencies": {
     "spark-html": "*",
     "spark-html-router": "*",
-    "spark-html-theme": "*"
+    "spark-html-theme": "*",
+    "spark-html-head": "*"
   },
   "devDependencies": {
     "spark-prerender": "*",

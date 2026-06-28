@@ -25,9 +25,9 @@ is `spark-html-*`.
 | 1 | Zero-build / CDN / URL-import | ✅ **Done** |
 | — | Router: active links + dynamic `:params` + anchor fix | ✅ Done (bonus) |
 | — | `spark-html-theme` package | ✅ Done (bonus) |
-| 2 | Editor + dev tooling | ◻ Not started |
-| 3 | Ergonomic papercuts in core | ◻ Not started |
-| 4 | Capability gaps (motion, nested routes, head helper) | ⏳ Partial |
+| 2 | Editor tooling — VS Code ✅, Zed (scaffold) ⏳ / HMR, DevTools ◻ | ⏳ Partial |
+| 3 | Ergonomic papercuts — inline handlers ✅ | ⏳ Partial |
+| 4 | Capability gaps — `spark-html-head` ✅, dynamic routes ✅ / motion, nested ◻ | ⏳ Partial |
 | 5 | Trust & quality — size guard ✅ / e2e ◻ | ⏳ Partial |
 
 ## Priorities
@@ -43,24 +43,27 @@ The sharpest differentiator, now productized and live:
   docs section; README snippet.
 - ✅ URL imports work as-is (`mount()` fetches any URL) — no core change needed.
 
-### 2. Editor + dev tooling — ◻ NOT STARTED  ← recommended next
-- ◻ **VS Code extension**: highlight `{expr}`, `$:`, `bind:`, `:attr` in `.html`
-  components; Emmet; surface runtime warnings as diagnostics.
+### 2. Editor + dev tooling — ⏳ PARTIAL
+- ✅ **VS Code extension** (`editors/vscode`): TextMate injection that
+  JS-highlights `{interpolations}` on top of HTML.
+- ⏳ **Zed extension** (`editors/zed`): HTML grammar + script/style injections;
+  `{…}` highlighting needs a dedicated `tree-sitter-spark` grammar (follow-up).
 - ◻ **True HMR**: the Vite plugin still does `full-reload` (state lost on edit) —
-  swap-in-place is a dev-only win.
+  swap-in-place is a dev-only win.  ← recommended next
 - ◻ **Spark DevTools**: component tree + store state + which bindings re-evaluated.
 
-### 3. Ergonomic papercuts in core — ◻ NOT STARTED
-- ◻ **Inline event expressions**: `onclick={count++}` still compiles to
-  `count++(event)` and breaks — detect callable-ref vs statement.
+### 3. Ergonomic papercuts in core — ⏳ PARTIAL
+- ✅ **Inline event expressions**: `onclick={count++}` / `{x = e.target.value}` /
+  `{add(5)}` now run as statements; a bare ref (`{fn}` / `{obj.method}`) is still
+  called with the event (0.21.2).
 - ◻ Documented quirks: comma `let a='', b=''` chains, `let name` shadowing,
   template-literals in attribute exprs, `onsubmit` reactivity.
 
 ### 4. Capability gaps — ⏳ PARTIAL (as optional packages, not core)
 - ✅ Router **dynamic routes** (`/blog/:id` → `route.params`) — shipped (0.5.0).
+- ✅ **`spark-html-head`** — reactive `<title>`/`<meta>` per route, 0 deps (0.1.0).
 - ◻ `spark-html-motion`: CSS-based `transition:fade`/`:slide` (no compiler).
 - ◻ Router: **nested routes / layouts**; focus management on navigation (a11y).
-- ◻ A `head`/meta helper (hand-rolled in novo + the website — wants to be a package).
 - ◻ `Map`/`Set` reactivity (only if demanded).
 
 ### 5. Trust & quality — ⏳ PARTIAL

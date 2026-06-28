@@ -1765,11 +1765,16 @@ function buildElementPlan(el) {
       continue;
     }
 
-    // onclick={handler} — attached once; no per-patch op.
+    // onclick={…} — attached once; no per-patch op. A bare reference (a name or
+    // dotted path like `add` / `theme.toggle`) is CALLED with the event;
+    // anything else (`count++`, `pick='b'`, `add(5)`, `x = event.target.value`)
+    // is run as an inline statement, with `event` in scope.
     if (/^on\w+$/.test(name) && value.startsWith('{') && value.endsWith('}')) {
       const fnExpr = value.slice(1, -1).trim();
+      const isRef = /^[a-zA-Z_$][\w$]*(?:\.[a-zA-Z_$][\w$]*)*$/.test(fnExpr);
+      const code = isRef ? `${fnExpr}(event)` : fnExpr;
       el.addEventListener(name.slice(2), (e) => {
-        execute(`${fnExpr}(event)`, el.__sparkScopeRef, e, undefined, {
+        execute(code, el.__sparkScopeRef, e, undefined, {
           phase: 'handler', component: componentNameFor(el), detail: name + '={' + fnExpr + '}',
         });
       });
