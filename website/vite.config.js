@@ -22,14 +22,15 @@ async function computeStats() {
   const deps = Object.keys(pkg.dependencies || {}).length;
   const pkgDirs = readdirSync(resolve(ROOT, 'packages'))
     .filter((d) => existsSync(resolve(ROOT, 'packages', d, 'package.json')));
-  // tests: count `await test(` cases across every package's test dir, floored
-  // to a tens boundary so the "N+ tests" claim is always honest.
+  // tests: count assertions (`assert(` / `assert.method(`) across every test
+  // dir — captures all files, including those with a custom harness. Floored to
+  // a tens boundary so the "N+ tests" claim is always honest, never overstated.
   let tests = 0;
   for (const d of pkgDirs) {
     const tdir = resolve(ROOT, 'packages', d, 'test');
     if (!existsSync(tdir)) continue;
     for (const f of readdirSync(tdir)) {
-      if (f.endsWith('.js')) tests += (readFileSync(resolve(tdir, f), 'utf8').match(/await test\(/g) || []).length;
+      if (f.endsWith('.js')) tests += (readFileSync(resolve(tdir, f), 'utf8').match(/\bassert(\.\w+)?\(/g) || []).length;
     }
   }
   _statsCache = { build: 0, runtimeKb, deps, packages: pkgDirs.length, tests: Math.floor(tests / 10) * 10 };
