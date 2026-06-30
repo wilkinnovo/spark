@@ -1,25 +1,6 @@
-# ⚡ spark-html
+# spark-html. HTML that reacts.
 
 Single-file HTML components with built-in reactivity. No compiler, no virtual DOM, no build step.
-
-## Install
-
-Scaffold a ready-to-run app (Vite + plugin + live welcome screen):
-
-```bash
-npx create-spark-html-app yourapp
-cd yourapp && npm install && npm run dev
-```
-
-Or add Spark to an existing project:
-
-```bash
-npm install spark-html
-```
-
-## Quick start
-
-A component is a plain `.html` file — markup, script, style:
 
 ```html
 <!-- components/welcome.html -->
@@ -34,7 +15,36 @@ A component is a plain `.html` file — markup, script, style:
 </style>
 ```
 
-Import it in your page and mount:
+**11 kB gzipped**.
+
+---
+
+## Install
+
+```bash
+npm create spark-html-app myapp
+cd myapp && npm install && npm run dev
+```
+
+Or add to an existing Vite project:
+
+```bash
+npm install spark-html
+```
+
+```js
+// vite.config.js
+import { defineConfig } from 'vite';
+import spark from 'spark-html/vite';
+
+export default defineConfig({ plugins: [spark()] });
+```
+
+---
+
+## Quick start
+
+A component is a plain `.html` file — markup, script, and style in one file.
 
 ```html
 <!-- index.html -->
@@ -47,53 +57,42 @@ Import it in your page and mount:
 </body>
 ```
 
-## With Vite
+That's it. No build step, no framework CLI — `mount()` finds every `<div import="…">`, fetches the component, and activates it.
 
-```js
-// vite.config.js
-import { defineConfig } from 'vite';
-import spark from 'spark-html/vite';
+---
 
-export default defineConfig({ plugins: [spark()] });
-```
+## Template syntax
 
-The plugin serves component fragments raw and full-reloads when they change.
+| Feature | Syntax |
+|---|---|
+| Text binding | `<p>Hello {name}</p>` |
+| Expressions | `<p>{price * qty}</p>` `{ok ? 'x' : 'y'}` |
+| Events | `<button onclick={add}>` |
+| Dynamic attributes | `<button :disabled="count >= 10">` |
+| Attribute interpolation | `<input value="{input}">` |
+| Loops | `<template each="todo in todos">…</template>` |
+| Loop with index | `<template each="todo, i in todos">…</template>` |
+| Keyed loops | `<template each="row in rows" key="row.id">…` |
+| Conditionals | `<template if="show">…</template>` |
+| Async blocks | `<template await="promise"> + <template then> / <template catch>` |
+| Two-way binding | `bind:value`, `bind:checked`, `bind:group`, `bind:form` |
+| Reactive statements | `$: doubled = count * 2` |
+| Scoped styles | `<style>` auto-scoped to the component |
+| Global style escape | `:global(body)` / `:global(.x) .y` |
+| Slots | `<slot>` / `<slot name="title">` |
+| Lifecycle | `onMount(fn)` — return a cleanup function |
+| Literal braces | `\{` / `\}` |
+| Escape hatch | `spark-ignore` attribute — subtree never patched |
 
-## API
+### Async blocks
 
-### Template syntax
-
-| Feature             | Syntax                                           |
-|---------------------|--------------------------------------------------|
-| Text binding        | `<p>Hello {name}</p>`                            |
-| Expressions         | `<p>{price * qty}</p>` `{ok ? 'x' : 'y'}`        |
-| Events              | `<button onclick={add}>`                         |
-| Dynamic attributes  | `<button :disabled="count >= 10">`               |
-| Attribute interp    | `<input value="{input}">`                        |
-| Loops               | `<template each="todo in todos">…</template>`    |
-| Loops with index    | `<template each="todo, i in todos">…</template>` |
-| Keyed loops         | `<template each="row in rows" key="row.id">…`    |
-| Scoped styles       | `<style>` auto-scoped to the component           |
-| Global styles       | `:global(body)` / `:global(.x) .y` escapes scoping (anywhere in a selector) |
-| Two-way binding     | `bind:value` (text/number/select/contenteditable), `bind:checked`, `bind:group` (radio) |
-| Reactive statements | `$: doubled = count * 2` — re-runs on change      |
-| Conditional blocks  | `<template if="show">…</template>`                |
-| Async blocks        | `<template await="promise">` + `<template then>` / `<template catch>` |
-| Slots               | `<slot>` / `<slot name="title">` — project caller content |
-| Lifecycle           | `onMount(fn)` builtin; return a fn for cleanup    |
-| Literal brace       | `\{` / `\}` — escape a brace in text               |
-| Escape hatch        | `spark-ignore` attribute — subtree never patched  |
-
-### Async blocks (`<template await>`)
-
-Render a promise declaratively — loading, resolved, and error states — with no
-manual flags:
+Declarative loading states with no manual flags:
 
 ```html
 <template await="loadUser(id)">
-  <p>Loading…</p>                                   <!-- pending -->
-  <template then>  <h1>Hi {await.name}</h1>  </template>   <!-- await = resolved value -->
-  <template catch> <p>Failed: {await.message}</p> </template> <!-- await = error -->
+  <p>Loading…</p>
+  <template then><h1>Hi {await.name}</h1></template>
+  <template catch><p>Failed: {await.message}</p></template>
 </template>
 
 <script>
@@ -106,33 +105,14 @@ manual flags:
 </script>
 ```
 
-- `await="expr"` is reactive like `$:` — when a value it reads changes it
-  re-evaluates, cancels the prior promise, and shows the loading state again.
-- Inside `<template then>` the identifier `await` is the resolved value; inside
-  `<template catch>` it's the error.
-- `await="once(expr)"` fires on mount only (never re-fires).
-- A non-promise expression renders the `then` branch immediately.
-- With [`spark-prerender`](https://www.npmjs.com/package/spark-prerender) the
-  build waits for the promise and bakes the resolved `:then` content into the
-  static HTML (SEO); the client re-runs it on hydration.
-
-### Literal braces
-
-`{…}` in any text is read as an expression. To show a literal brace, escape it
-with a backslash — `\{` and `\}`:
-
-```html
-<p>press \{enter\} to submit</p>   <!-- press {enter} to submit -->
-```
-
-HTML entities (`&#123;`) don't work — the browser decodes them before Spark
-sees the text. For a whole block of literal content (code samples), use
-`spark-ignore` so Spark skips the subtree entirely.
+- Reactive — re-evaluates when dependencies change, cancels prior promise, shows loading again.
+- `<template await="once(expr)">` fires only on mount.
+- Non-promise expressions render `then` immediately.
+- `spark-prerender` bakes resolved content into static HTML at build time.
 
 ### Props
 
-Attributes on the import placeholder become props. `export let` in the
-component declares which variables are props, with defaults:
+Attributes on the import placeholder become component props:
 
 ```html
 <div import="components/profile" name="Ada Lovelace" age="36" admin></div>
@@ -143,19 +123,16 @@ component declares which variables are props, with defaults:
 <h2>{name}{admin ? ' (admin)' : ''}, {age}</h2>
 <script>
   export let name = 'Anonymous';
-  export let age = 0;        // "36" is coerced to number 36
-  export let admin = false;  // bare attribute → true
+  export let age = 0;
+  export let admin = false;
 </script>
 ```
 
-Coercion: numbers, `true`/`false`, `null`, and JSON (`items='["a","b"]'`)
-are parsed; everything else stays a string. Variables declared with plain
-`let` are private — outside attributes cannot override them.
+Numbers, `true`/`false`/`null`, and JSON are coerced automatically; everything else stays a string. Plain `let` variables are private.
 
-### Stores (shared state)
+### Stores
 
-Create named stores in app code; subscribe from any component with the
-`useStore` builtin. Every subscriber re-patches when the store changes:
+Named reactive stores shared across components:
 
 ```js
 // main.js
@@ -170,24 +147,21 @@ mount();
 <script>
   const cart = useStore('cart');
   function add() {
-    cart.items.push('thing');   // deep mutation — notifies every subscriber
+    cart.items.push(thing);
     cart.total += 4;
   }
 </script>
 ```
 
-Stores are **deeply reactive**: an in-place mutation (`cart.items.push(x)`,
-`cart.user.name = 'Ada'`) notifies every subscribing component, just like
-component-local state — no need to reassign the whole value.
+Stores are deeply reactive — in-place mutations (`push`, `row.key = val`) notify every subscriber automatically.
 
 ### Derived stores
 
-`derived(name, deps, compute)` is a **read-only** store computed from other
-stores — the cross-component answer to component-local `$:`. It recomputes when
-any source changes and only notifies when a key actually changes (memoized):
+Read-only stores computed from other stores:
 
 ```js
-// main.js
+import { store, derived } from 'spark-html';
+
 store('cart', { items: [] });
 derived('cartTotal', ['cart'], (cart) => ({
   count: cart.items.length,
@@ -195,113 +169,126 @@ derived('cartTotal', ['cart'], (cart) => ({
 }));
 ```
 
-```html
-<!-- any component -->
-<p>{summary.count} items — ${summary.total}</p>
-<script>const summary = useStore('cartTotal');</script>
-```
+Chains and memoizes — only notifies subscribers when a key actually changes.
 
-`compute` returns an object whose keys become the derived store's state. Derived
-stores may depend on other derived stores (they chain). Mutate a **source**
-store, never the derived proxy.
-
-### Forms (`bind:form`)
-
-`bind:form="name"` on a `<form>` creates a reactive `name` object —
-`{ valid, errors, values, pending, submitted, error }` — driven by **native HTML
-constraint validation** (`required`, `type="email"`, `pattern`, `minlength`…).
-Submit is auto-`preventDefault`'d; an async `onsubmit` handler is awaited with
-`pending` and a rejection is caught into `error`. No manual flags:
+### Forms
 
 ```html
 <form bind:form="f" onsubmit={save} novalidate>
   <input name="email" type="email" required bind:value="email" />
   <p :hidden="!(f.submitted && f.errors.email)">{f.errors.email}</p>
-
   <button type="submit" :disabled="f.pending || !f.valid">
     {f.pending ? 'Saving…' : 'Sign up'}
   </button>
   <p :hidden="!f.error">✗ {f.error?.message}</p>
 </form>
-<script>
-  let email = '';
-  async function save() { await api.signup(email); }  // f.pending wraps this
-</script>
 ```
 
-> A plain `onsubmit={…}` on a `<form>` (without `bind:form`) is also
-> auto-`preventDefault`'d now — no more accidental full-page navigation.
+`bind:form="name"` creates a reactive `{ valid, errors, values, pending, submitted, error }` object driven by native HTML constraint validation. Submit is auto-`preventDefault`'d; async handlers set `pending`/`error` automatically.
 
-For **async data**, [`spark-html-query`](https://www.npmjs.com/package/spark-html-query)
-adds a self-fetching store (`loading` / `error` / `data` / `refetch`) on top of
-`store()`.
+---
 
-### JavaScript
+## How it works
+
+1. **`mount()`** finds `<div import="…">` placeholders and fetches each component file.
+2. **Script and style are extracted from raw text** before the markup touches `innerHTML` — browsers strip `<script>` tags injected via `innerHTML`, so text-level extraction sidesteps the whole class of bugs.
+3. **The script runs inside a `Proxy` scope** — every assignment schedules a patch of only that component's DOM. Patches are batched onto a single microtask.
+4. **Patches are cheap by construction** — static subtrees (no bindings) are walked once and then skipped. A patch costs work proportional to *dynamic* nodes, not the whole tree. Dependency tracking (`O(changed)`) re-evaluates only bindings that read a changed key.
+5. **Deep reactivity** — plain objects and arrays read from scope are wrapped in proxies so `todos.push(x)` and `row.done = true` re-render without replacing the whole value. `Map` and `Set` mutations are tracked too.
+6. **Styles are auto-scoped** via a `[name="component"]` prefix. `@media`/`@supports` scope correctly, `@keyframes`/`@font-face` pass through, and `:global(…)` opts out.
+7. **Loops reconcile by key** — each item keeps its DOM nodes across updates (matched by index, or by `key`), so inputs inside loops keep focus.
+8. **A cloak style** hides components via `visibility:hidden` until booted and patched — no flash of raw `{braces}` or unstyled markup.
+
+---
+
+## Error handling
+
+Failures are **isolated to the component** that caused them — a broken component never blanks the page or stops a sibling from rendering. Broken expressions, `$:` statements, event handlers, script errors, boot, and patch failures are all caught and logged (deduped) with the component name.
+
+Opt into a full-screen **error overlay** for development:
 
 ```js
-import { mount, unmount, component, store, derived } from 'spark-html';
+mount(document.body, { devOverlay: true });
+// or set globalThis.__SPARK_DEV_OVERLAY__ before mount
+```
 
-await mount();          // whole document
-await mount('#app');    // a subtree
-unmount(el);            // run onMount cleanups + drop store subs, then remove el
+---
 
-// register a component from a string (no file needed) — great for tests
+## JavaScript API
+
+```js
+import { mount, unmount, component, store, derived, subscribe } from 'spark-html';
+
+await mount();             // mount on document.body
+await mount('#app');       // mount on a specific element
+unmount(el);               // run onMount cleanups, drop store subs, remove el
+
+store('name', initial);    // create a reactive store
+derived('name', deps, fn); // read-only computed store
+subscribe('name', fn);     // subscribe to store changes from outside a component
+
+// Register a component from a string (no file needed) — great for tests
 component('hello', `
   <h1>Hi {who}</h1>
   <script>let who = 'tester';<\/script>
 `);
 ```
 
-## Error handling
+---
 
-Failures are **isolated to the component** that caused them — a broken
-component never blanks the page or stops a sibling from rendering. Broken
-expressions, `$:` statements, event handlers, a `<script>` that throws, boot,
-and patch are all caught and logged (deduped) with the component named.
+## Companion packages
 
-For development, opt into a full-screen **error overlay** (message, failing
-component, and stack) — off by default:
+| Package | What it does |
+|---|---|
+| [`spark-html-router`](https://www.npmjs.com/package/spark-html-router) | Declarative SPA router — `<template route>`, nested routes, `aria-current`, focus management |
+| [`spark-html-theme`](https://www.npmjs.com/package/spark-html-theme) | Dark/light/system theming with localStorage persistence and no-flash init script |
+| [`spark-html-motion`](https://www.npmjs.com/package/spark-html-motion) | Declarative view transitions — `<template motion>` with named views and animation presets |
+| [`spark-html-head`](https://www.npmjs.com/package/spark-html-head) | Per-route `<title>`, `<meta>`, and `<link>` management |
+| [`spark-html-query`](https://www.npmjs.com/package/spark-html-query) | Self-fetching stores with `loading`/`error`/`data`/`refetch` |
+| [`spark-html-persist`](https://www.npmjs.com/package/spark-html-persist) | Persist any store to `localStorage` — survives refresh |
+| [`spark-html-devtools`](https://www.npmjs.com/package/spark-html-devtools) | Browser devtools panel — inspect stores, components, and reactivity |
+| [`spark-prerender`](https://www.npmjs.com/package/spark-prerender) | Build-time prerendering + client hydration — SEO without SSR |
+| [`create-spark-html-app`](https://www.npmjs.com/package/create-spark-html-app) | Scaffold a new project in one command |
+| [`prettier-plugin-spark`](https://www.npmjs.com/package/prettier-plugin-spark) | Prettier plugin for Spark component files |
 
-```js
-import { mount } from 'spark-html';
-mount(document.body, { devOverlay: true });   // or set globalThis.__SPARK_DEV_OVERLAY__
-```
+---
 
-## How it works
+## Performance
 
-1. `mount()` finds `<div import="...">` placeholders and fetches each file.
-2. Script and style are extracted from the raw text **before** the markup
-   touches `innerHTML` (browsers strip script tags injected that way).
-3. The script runs inside a `Proxy` scope; every assignment schedules a
-   patch of only that component's DOM. Patches are batched onto a single
-   microtask, so a burst of assignments costs one DOM update. Plain
-   objects/arrays read from scope are deeply reactive, so `todos.push(x)`
-   and `row.done = true` re-render without replacing the value.
-4. Patches are cheap by construction. Static subtrees (no bindings) are
-   walked once and then skipped, so a patch costs work proportional to the
-   *dynamic* nodes, not the whole tree. And while a binding (or `$:`) is
-   evaluated the scope records which keys it read, so a plain `count++`
-   re-evaluates only the bindings that read `count` — O(changed). It reaches
-   into loops too: mutating one row's item (`todos[i].done = true`) re-walks
-   just that row, not the list (a `$:` aggregate and any out-of-loop read stay
-   correct). Changes that can't be pinned to a row or key (a structural array
-   change, a non-loop deep mutation, store writes, member-path binds) fall back
-   to a full, still-cheap pass — never stale.
-5. Styles are auto-scoped via a `[name="component"]` prefix by a small CSS
-   parser: `@media`/`@supports` selectors scope correctly, `@keyframes`/
-   `@font-face` are left alone, and `:global(…)` opts out anywhere in a
-   selector.
-6. Loops reconcile: each item keeps its DOM nodes across updates (matched
-   by index, or by `key`), so inputs inside loops keep focus.
-7. A cloak style hides components until they're booted and patched — no
-   flash of raw `{braces}` or unstyled markup on load.
+- **Components ship as authored HTML** — no compiler generates code from your template, so there is nothing to parse or evaluate at startup. The file you write is the component that runs.
+- **Text-level extraction of `<script>`/`<style>`** — browsers strip `<script>` tags injected via `innerHTML` (the only way most client-only frameworks can parse a fetched HTML fragment). Spark extracts script and style from the raw text with a tokenizer before the markup ever touches the DOM — sidestepping the entire class of bugs that every other runtime-only framework has to work around.
+- **No virtual DOM** — patches mutate the DOM directly. No intermediate tree to allocate, diff, or discard per frame.
+- **O(changed) dependency tracking** — each binding records which scope keys it reads. A write re-evaluates only the bindings and `$:` statements that actually changed — not a full component walk.
+
+  ```html
+  <p>{a} + {b} = {a + b}</p>
+  <p>{c}</p>
+  <script>
+    let a = 1, b = 2, c = 3;
+  </script>
+  ```
+
+  Updating `a` re-evaluates `{a}` and `{a + b}`. The `{c}` binding is skipped — it didn't read `a`.
+
+- **Row-level loop granularity** — mutating one item in a list re-walks only that row, not every row:
+
+  ```html
+  <template each="todo in todos" key="todo.id">
+    <p>{todo.text} — {todo.done ? '✓' : '○'}</p>
+  </template>
+  <script>
+    let todos = [{ id: 1, text: 'a', done: false }, /* …999 more… */];
+    function toggle() { todos[3].done = true; }
+  </script>
+  ```
+
+  `toggle()` re-walks only row index 3 — the other 999 rows are untouched. A structural change (push, splice, re-sort) still re-reconciles the list shape but skips rows whose identity (key) didn't move. Deep mutations not pinned to a row fall back to a full (still cheap) pass — never stale.
+- **Tracked `Map`/`Set` mutations** — `map.set(key, val)`, `set.add(item)`, and `delete`/`clear` trigger re-renders, just like array push and object property assignment. No special API or immutability discipline required.
 
 ## Limits
 
-- One reactive scope per component (top-level `let`/`function`)
-- Block-scoped `let/const` inside functions hoist to component scope
-- Plain objects/arrays are deeply reactive; `Map`/`Set`/class instances are
-  not tracked — reassign them to update. Loops reconcile by index — add
-  `key="…"` for identity-stable reordering
-- No SSR/hydration (client-rendered) and no built-in router (a companion
-  package); the runtime uses `new Function` so a strict CSP needs `unsafe-eval`
+- **One reactive scope per component** — all top-level `let`/`function` declarations share a single proxy scope within each component.
+- **`let`/`const` inside functions** — plain declarations (`let x = 1`) still hoist to component scope. Destructuring (`let {a} = obj`) stays block-local.
+- **Class instances / `Date`** — not deeply reactive (intentional). Reassign the variable to trigger an update. Plain objects, arrays, `Map`, and `Set` are all tracked.
+- **Loops reconcile by index by default** — add `key="…"` for identity-stable reordering (keeps focus, preserves element state).
+- **CSP** — the runtime uses `new Function` for expressions and event handlers, so a strict Content Security Policy needs `unsafe-eval`.

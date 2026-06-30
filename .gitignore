@@ -1,7 +1,9 @@
 node_modules
 dist
-future.md
-new-roadmap.md
+
+# Root .md files (except README.md) — design notes, not public docs
+/*.md
+!/README.md
 
 # Playwright e2e artifacts
 test-results

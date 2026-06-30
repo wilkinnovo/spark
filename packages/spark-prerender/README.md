@@ -164,9 +164,11 @@ Honest limitations:
   `<script>` is not executed (linkedom doesn't run page scripts); the
   prerenderer calls `mount()` itself. Components that read a store render with
   empty state (and warn) — that content is client-rendered.
-- **No DOM adoption / hydration in v1.** The output is static, crawler-ready
-  HTML. Re-mounting the same runtime over it (true hydration) is a later phase
-  (near a boot rewrite). For interactive pages, treat this as the SEO shell.
+- **Hydration is supported.** Prerendered HTML carries `import` paths and props
+  as attributes (`makeHydratable()`). On the client, `mount()` adopts the
+  prerendered DOM in place — it boots each component while detached and swaps
+  atomically, so the user never sees a blank or raw braces. The router also
+  adopts prerendered route outlets without flashing.
 - `spark-ignore` regions (e.g. `<pre>` code samples) are left literal, exactly
   as in the browser.
 
