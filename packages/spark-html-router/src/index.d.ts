@@ -1,3 +1,5 @@
+import type { MountOptions } from 'spark-html';
+
 /**
  * spark-html-router — declarative <template route> client routing for spark-html.
  *
@@ -24,7 +26,7 @@ export interface RouteState {
   params: Record<string, string>;
 }
 
-export interface RouterOptions {
+export interface RouterOptions extends MountOptions {
   /**
    * Path prefix the app is served under (e.g. "/spark" on GitHub Pages).
    * Stripped from the URL before matching; added back when navigating.
