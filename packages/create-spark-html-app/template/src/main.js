@@ -4,7 +4,8 @@ import { theme } from "spark-html-theme";
 import { head } from "spark-html-head";
 import { devtools } from "spark-html-devtools";
 
-if (import.meta.env?.DEV) devtools(); // dev only
+const dev = import.meta.env?.DEV;
+if (dev) devtools(); // dev only
 
 head({
   title: { "/": "Home", "/about": "About", "*": "Not found" },
@@ -20,4 +21,4 @@ theme();
 
 // Client-side router: reads <template route> blocks, intercepts <a> clicks,
 // and manages SPA navigation. Call it once — replaces mount().
-router();
+router({ devOverlay: dev });
