@@ -8,6 +8,7 @@
     <a href="#no-build">No build / CDN</a>
     <a href="#components">Components</a>
     <a href="#syntax">Template syntax</a>
+    <a href="#async">Async blocks</a>
     <a href="#slots">Slots</a>
     <a href="#reactive">Reactivity &amp; lifecycle</a>
     <a href="#props">Props</a>
@@ -87,6 +88,8 @@
       <tr><td>Dynamic class</td><td><code>&lt;li :class="done ? 'item done' : 'item'"&gt;</code></td></tr>
       <tr><td>Two-way binding</td><td><code>bind:value</code> (text, number, <code>&lt;select&gt;</code>, contenteditable), <code>bind:checked</code> (checkbox), <code>bind:group</code> (radio)</td></tr>
       <tr><td>Conditional blocks</td><td><code>&lt;template if="show"&gt;…&lt;/template&gt;</code> — nodes enter/leave the DOM</td></tr>
+      <tr><td>Async blocks</td><td><code>&lt;template await="promise"&gt;…&lt;/template&gt;</code> — pending / then / catch</td></tr>
+      <tr><td>Name the awaited value</td><td><code>&lt;template await="load(id)" as="user"&gt;</code> — use <code>{user.name}</code> instead of <code>{await.name}</code></td></tr>
       <tr><td>Slots</td><td><code>&lt;slot&gt;&lt;/slot&gt;</code> &nbsp; <code>&lt;slot name="title"&gt;&lt;/slot&gt;</code> — project caller content</td></tr>
       <tr><td>Escape hatch</td><td><code>&lt;pre spark-ignore&gt;</code> — subtree is never patched; literal <code>{braces}</code> survive</td></tr>
     </table>
@@ -100,6 +103,21 @@
   function greet() { return `Hi ${name}`; }
 &lt;/pre&gt;</pre>
     <p class="note">A string expression also works for one-off braces: <code>{'{'}</code> renders <code>{</code>. The backslash escape is usually cleaner in prose.</p>
+
+    <h3 id="async">Async blocks (<code>&lt;template await&gt;</code>)</h3>
+    <p>Render a promise declaratively — loading, resolved, and error states — with no manual flags:</p>
+    <pre spark-ignore>&lt;template await="loadUser(id)"&gt;
+  &lt;p&gt;Loading…&lt;/p&gt;                                &lt;!-- pending --&gt;
+  &lt;template then&gt; &lt;h1&gt;Hi {await.name}&lt;/h1&gt; &lt;/template&gt;  &lt;!-- resolved --&gt;
+  &lt;template catch&gt; &lt;p&gt;Failed: {await.message}&lt;/p&gt; &lt;/template&gt; &lt;!-- error --&gt;
+&lt;/template&gt;</pre>
+    <p>Inside <code>&lt;template then&gt;</code>, the identifier <code>await</code> holds the resolved value. Inside <code>&lt;template catch&gt;</code>, it holds the error. Give it a custom name with <code>as="…"</code>:</p>
+    <pre spark-ignore>&lt;template await="loadUser(id)" as="user"&gt;
+  &lt;p&gt;Loading…&lt;/p&gt;
+  &lt;template then&gt;  &lt;h1&gt;Hi {user.name}&lt;/h1&gt;          &lt;/template&gt;
+  &lt;template catch&gt; &lt;p&gt;Failed: {user.message}&lt;/p&gt;   &lt;/template&gt;
+&lt;/template&gt;</pre>
+    <p>The expression is <strong>reactive</strong> — re-evaluated when state changes, cancelling the prior promise. Use <code>await="once(expr)"</code> to fire on mount only (no re-evaluation). A plain (non-promise) value renders the <code>then</code> branch immediately. The <code>spark-prerender</code> build tool waits for the promise to settle before writing the output, so async data lands in the HTML.</p>
 
     <h2 id="slots">Slots</h2>
     <p>Slots let a component wrap content the <em>caller</em> provides — the key to reusable wrappers like cards, modals, and layouts. A component marks insertion points with the real <code>&lt;slot&gt;</code> element:</p>
