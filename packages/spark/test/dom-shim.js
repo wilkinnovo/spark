@@ -200,7 +200,17 @@ export function parseHTML(html, parent) {
     const top = stack[stack.length - 1];
     if (html[i] === '<') {
       if (html.startsWith('<!--', i)) { i = html.indexOf('-->', i) + 3; continue; }
-      const close = html.indexOf('>', i);
+      // Find > that ends this tag, skipping over quoted attribute values
+      // so that > inside onclick="…" or similar doesn't truncate the tag.
+      let close = i + 1;
+      let inQuote = null;
+      while (close < html.length) {
+        const ch = html[close];
+        if (inQuote) { if (ch === inQuote) inQuote = null; }
+        else if (ch === '"' || ch === "'") inQuote = ch;
+        else if (ch === '>') break;
+        close++;
+      }
       const raw = html.slice(i + 1, close);
       i = close + 1;
       if (raw.startsWith('/')) { stack.pop(); continue; }
@@ -210,10 +220,10 @@ export function parseHTML(html, parent) {
       const tag = (sp === -1 ? inner : inner.slice(0, sp)).toLowerCase();
       const el = new Element(tag);
       const attrStr = sp === -1 ? '' : inner.slice(sp);
-      const attrRe = /([^\s=]+)(?:\s*=\s*"([^"]*)"|\s*=\s*'([^']*)')?/g;
+      const attrRe = /([^\s=]+)(?:\s*=\s*"([^"]*)"|\s*=\s*'([^']*)'|\s*=\s*\{([^}]*)\})?/g;
       let am;
       while ((am = attrRe.exec(attrStr)) !== null) {
-        if (am[1]) el.setAttribute(am[1], am[2] ?? am[3] ?? '');
+        if (am[1]) el.setAttribute(am[1], am[2] ?? am[3] ?? am[4] ?? '');
       }
       (top.content && top.tagName === 'TEMPLATE' ? top.content : top).appendChild(el);
       if (!selfClose && !VOID.has(tag)) stack.push(el);

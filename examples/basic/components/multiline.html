@@ -1,0 +1,338 @@
+<div class="card">
+  <h2>Multiline handler stress test</h2>
+  <p class="hint">
+    Each handler uses <code>onclick="{<br />&nbsp;&nbsp;stmt;<br />}"</code> —
+    multiline, indented, semicolons. Check the console for zero errors.
+  </p>
+
+  <!-- 1. bare function reference -->
+  <div class="row">
+    <span
+      class="bolt"
+      onclick="
+        {
+          strike;
+        }
+      "
+      title="Strike"
+      >⚡</span
+    >
+    <span class="tag">bare ref: {sparks}</span>
+  </div>
+
+  <!-- 2. increment / decrement -->
+  <div class="row sect">
+    <button
+      class="round"
+      onclick="
+        {
+          count--;
+        }
+      "
+      :disabled="count <= -5"
+    >
+      −
+    </button>
+    <span class="num">{count}</span>
+    <button
+      class="round plus"
+      onclick="
+        {
+          count++;
+        }
+      "
+      :disabled="count >= 5"
+    >
+      +
+    </button>
+    <span class="tag">inc/dec</span>
+  </div>
+
+  <!-- 3. Math.max guard -->
+  <div class="row sect">
+    <button
+      onclick="
+        {
+          clamped = Math.max(0, clamped - 1);
+        }
+      "
+      :disabled="clamped <= 0"
+    >
+      clamped −
+    </button>
+    <span class="num">{clamped}</span>
+    <button
+      onclick="
+        {
+          clamped++;
+        }
+      "
+    >
+      clamped +
+    </button>
+    <span class="tag">Math.max</span>
+  </div>
+
+  <!-- 4. toggle boolean -->
+  <div class="row sect">
+    <button
+      onclick="
+        {
+          show = !show;
+        }
+      "
+    >
+      {show ? 'hide' : 'show'} panel
+    </button>
+    <template if="show">
+      <div class="panel">Now you see me</div>
+    </template>
+    <span class="tag">toggle</span>
+  </div>
+
+  <!-- 5. event object -->
+  <div class="row sect">
+    <input
+      :value="msg"
+      oninput="
+        {
+          msg = event.target.value;
+        }
+      "
+      placeholder="type here…"
+    />
+    <span class="echo">{msg || '—'}</span>
+    <span class="tag">event</span>
+  </div>
+
+  <!-- 6. string literal inside -->
+  <div class="row sect">
+    <button
+      onclick="
+        {
+          flavor = 'spark';
+        }
+      "
+    >
+      set flavor
+    </button>
+    <span class="echo">{flavor}</span>
+    <span class="tag">string lit</span>
+  </div>
+
+  <!-- 7. array push -->
+  <div class="row sect">
+    <button
+      onclick="
+        {
+          log.push(count);
+        }
+      "
+    >
+      log current
+    </button>
+    <span class="echo">[{log.join(', ')}]</span>
+    <span class="tag">array.push</span>
+  </div>
+
+  <!-- 8. multiple statements -->
+  <div class="row sect">
+    <button
+      onclick="
+        {
+          multi++;
+          multiTotal += multi;
+        }
+      "
+    >
+      step
+    </button>
+    <button
+      onclick="
+        {
+          multi = 0;
+          multiTotal = 0;
+        }
+      "
+    >
+      reset
+    </button>
+    <span class="echo">{multi} / {multiTotal}</span>
+    <span class="tag">multi stmt</span>
+  </div>
+
+  <!-- 9. conditional statement -->
+  <div class="row sect">
+    <button
+      onclick="
+        {
+          if (count > 2) {
+            bigWarning = 'OVER 2!';
+          } else {
+            bigWarning = '';
+          }
+        }
+      "
+    >
+      check
+    </button>
+    <span class="echo" :hidden="!bigWarning">{bigWarning}</span>
+    <span class="tag">if/else</span>
+  </div>
+
+  <!-- 10. object literal in assignment -->
+  <div class="row sect">
+    <button
+      onclick="
+        {
+          items = [...items, { id: nextId++, label: 'item' }];
+        }
+      "
+    >
+      add
+    </button>
+    <button
+      onclick="
+        {
+          items = [];
+        }
+      "
+    >
+      clear
+    </button>
+    <span class="echo">{items.length} item{items.length === 1 ? '' : 's'}</span>
+    <span class="tag">object lit</span>
+  </div>
+
+  <!-- 11. call with inline arg -->
+  <div class="row sect">
+    <button
+      onclick="
+        {
+          bump(3);
+        }
+      "
+    >
+      bump +3
+    </button>
+    <span class="echo">extra = {extra}</span>
+    <span class="tag">fn call</span>
+  </div>
+</div>
+
+<script>
+  let count = 0;
+  let clamped = 0;
+  let show = false;
+  let msg = "";
+  let flavor = "none";
+  let log = [];
+  let multi = 0;
+  let multiTotal = 0;
+  let bigWarning = "";
+  let items = [];
+  let nextId = 1;
+  let extra = 0;
+  let sparks = 0;
+
+  function strike() {
+    sparks++;
+  }
+  function bump(n) {
+    extra += n;
+  }
+</script>
+
+<style>
+  .bolt {
+    font-size: 28px;
+    cursor: pointer;
+    user-select: none;
+    line-height: 1;
+  }
+  .bolt:hover {
+    transform: scale(1.15);
+  }
+  .round {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    font-size: 20px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .round.plus {
+    background: var(--surface-2);
+  }
+  .num {
+    font-size: 28px;
+    font-weight: 700;
+    min-width: 40px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .sect {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .tag {
+    font-size: 10px;
+    color: var(--muted-dim);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-left: auto;
+  }
+  .echo {
+    font-size: 13px;
+    color: var(--muted);
+    min-width: 40px;
+  }
+  .panel {
+    margin-top: 8px;
+    padding: 10px;
+    border-radius: 8px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--spark);
+    font-size: 13px;
+    width: 100%;
+  }
+  input {
+    font-family: inherit;
+    font-size: 14px;
+    background: #000;
+    color: var(--text);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    padding: 7px 10px;
+    flex: 1;
+    min-width: 120px;
+  }
+  input:focus {
+    outline: none;
+    border-color: var(--spark);
+  }
+  button {
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border-strong);
+    background: var(--surface-2);
+    color: var(--text);
+    transition: border-color 0.12s;
+  }
+  button:hover {
+    border-color: var(--spark);
+    color: var(--spark);
+  }
+  button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+</style>

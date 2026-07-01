@@ -258,7 +258,8 @@ function parseTemplate(template) {
       const end = interpEnd(template, i + 1);
       if (end === -1) { lit += c; i++; continue; } // unbalanced → literal
       flush();
-      segs.push({ code: template.slice(i + 1, end).trim() });
+      const code = template.slice(i + 1, end).trim().replace(/;\s*$/, '');
+      if (code) segs.push({ code });
       i = end + 1;
       continue;
     }
@@ -2052,10 +2053,11 @@ function buildElementPlan(el) {
     // dotted path like `add` / `theme.toggle`) is CALLED with the event;
     // anything else (`count++`, `pick='b'`, `add(5)`, `x = event.target.value`)
     // is run as an inline statement, with `event` in scope.
-    if (/^on\w+$/.test(name) && value.startsWith('{') && value.endsWith('}')) {
+    const trimmedValue = value.trim();
+    if (/^on\w+$/.test(name) && trimmedValue.startsWith('{') && trimmedValue.endsWith('}')) {
       // (A <form bind:form>'s onsubmit was already captured + stripped by the
       // pre-scan above, so it never reaches here.)
-      const fnExpr = value.slice(1, -1).trim();
+      const fnExpr = trimmedValue.slice(1, -1).trim().replace(/;\s*$/, '');
       const isRef = /^[a-zA-Z_$][\w$]*(?:\.[a-zA-Z_$][\w$]*)*$/.test(fnExpr);
       const code = isRef ? `${fnExpr}(event)` : fnExpr;
       const evt = name.slice(2);
