@@ -184,8 +184,7 @@ function evaluate(code, scope) {
   try {
     return compileExpr(code)(scope);
   } catch (e) {
-    // A thrown evaluation (e.g. reading a property of undefined) renders as
-    // empty — tell the consumer which expression and why, once.
+    if (isPrerender()) return '';
     warnOnce(`e:${code}`, `[spark] Error evaluating {${code}} — ${e.message}. (Rendered as empty. Use {a?.b} for values that may be missing.)`);
     return '';
   }
@@ -521,9 +520,9 @@ async function resolveImportNode(node, scope = null) {
     if (hydrate) {
       // Boot the whole subtree while detached so it's fully rendered before it
       // ever touches the page, then swap it for the old content in one tick.
-      bootComponent(host);
+      await bootComponent(host);
       const nested = [...host.querySelectorAll('[name]')];
-      nested.forEach(bootComponent);
+      await Promise.all(nested.map(bootComponent));
       reveal(host);
       nested.forEach(reveal);
     }
@@ -559,12 +558,12 @@ function hydrateBlockImports(nodes, scope) {
 
     // The cloned node IS itself an import placeholder.
     if (node.hasAttribute('import')) {
-      resolveImportNode(node, scope).then((host) => {
+      resolveImportNode(node, scope).then(async (host) => {
         if (!host) return;
         host.__sparkManaged = node.__sparkManaged; // stays owned by the block
         nodes[idx] = host;
-        bootComponent(host);
-        host.querySelectorAll('[name]').forEach(bootComponent);
+        await bootComponent(host);
+        await Promise.all([...host.querySelectorAll('[name]')].map(bootComponent));
       });
       continue;
     }
@@ -572,8 +571,8 @@ function hydrateBlockImports(nodes, scope) {
     // Imports nested somewhere inside the cloned node.
     if (node.querySelector && node.querySelector('[import]')) {
       const inner = [...node.querySelectorAll('[import]')];
-      Promise.all(inner.map((n) => resolveImportNode(n, scope))).then(() => {
-        node.querySelectorAll('[name]').forEach(bootComponent);
+      Promise.all(inner.map((n) => resolveImportNode(n, scope))).then(async () => {
+        await Promise.all([...node.querySelectorAll('[name]')].map(bootComponent));
       });
     }
   }
@@ -1072,10 +1071,78 @@ function extractReactiveStatements(src) {
 }
 
 // ─── Reactive scope ────────────────────────────────────────────────────
-function makeScope(rawCode, componentEl, props = {}) {
+async function makeScope(rawCode, componentEl, props = {}) {
   // Normalize line endings + strip comments so the declaration regexes
   // behave identically on every OS/editor. (CRLF was a real-world bug.)
   let code = rawCode.replace(/\r\n?/g, '\n');
+
+  // Transform `import {x} from "./y.js"` to dynamic `({x} = await import(url))`.
+  // In the browser, the import is resolved against the component's file URL.
+  // During prerender, imports are replaced with undefined declarations so the
+  // script can still parse and run without errors (values are populated on
+  // the client after hydration).
+  let hasImports = false;
+  const importRe = /^\s*import\s+(['"]|(?:[\s\S]*?)\s+from\s+['"])/gm;
+  const importLines = [];
+  let _m;
+  while ((_m = importRe.exec(code)) !== null) {
+    // Find end of this import statement
+    let end = _m.index + _m[0].length;
+    // Determine opening quote character from group 1.
+    // For side-effect imports `import "mod"`  -> _m[1] is `"` (first char is the quote).
+    // For named imports `import {x} from "mod"` -> _m[1] is `{x} from "` (last char is the quote).
+    let q;
+    if (_m[1]) {
+      q = (_m[1][0] === "'" || _m[1][0] === '"') ? _m[1][0] : _m[1][_m[1].length - 1];
+    }
+    if (q) {
+      while (end < code.length && code[end] !== q) end++;
+      if (end < code.length) end++; // skip closing quote
+      while (end < code.length && (code[end] === ';' || code[end] === ' ' || code[end] === '\t')) end++;
+    }
+    importLines.push(code.slice(_m.index, end));
+  }
+  if (importLines.length) {
+    hasImports = true;
+    // Remove all import lines from the code in both modes
+    for (const line of importLines) {
+      code = code.replace(line, '');
+    }
+
+    if (!isPrerender()) {
+      // Browser: transform to dynamic import() calls resolved relative to
+      // the component file's URL.
+      const importBaseUrl = componentEl.__sparkImportPath
+        ? new URL(componentEl.__sparkImportPath, document.baseURI || location.href).href
+        : (document.baseURI || location.href);
+
+      const transformed = importLines.map((line) => {
+        const parts = line.match(
+          /^\s*import\s+(?:([\s\S]*?)\s+from\s+)?['"]([^'"]+)['"]\s*;?\s*$/,
+        );
+        if (!parts) return line;
+        const spec = parts[1];
+        const from = parts[2];
+        const url = JSON.stringify(new URL(from, importBaseUrl).href);
+        if (!spec) return `await import(${url});`;
+        if (spec.startsWith('* as ')) return `${spec.slice(5).trim()} = await import(${url});`;
+        if (spec.startsWith('{')) return `(${spec} = await import(${url}));`;
+        // Default import — optionally followed by , { named }
+        const dm = spec.match(/^(\w+)(?:\s*,\s*\{([^}]*)\})?\s*$/);
+        if (dm) {
+          if (dm[2]) return `({default: ${dm[1]}, ${dm[2]}} = await import(${url}));`;
+          return `({default: ${dm[1]}} = await import(${url}));`;
+        }
+        return line;
+      }).join('\n');
+
+      code = transformed + '\n' + code;
+    }
+    // During prerender the stubs above are still hit, but the script
+    // is never actually executed — see the isPrerender()+hasImports
+    // check in the execution block below.
+  }
+
   // `export let x = …` marks a PROP (overridable from the import
   // placeholder). Record prop names, then treat as a normal declaration.
   const propNames = new Set();
@@ -1332,15 +1399,27 @@ function makeScope(rawCode, componentEl, props = {}) {
   }
 
   try {
-    // Newline before `}` so a script ending in a `//` comment still closes.
-    new Function('__scope__', `with(__scope__) {\n${rewritten}\n}`)(scope);
+    if (isPrerender() && hasImports) {
+      // Prerender: imported values aren't available. Skip script execution
+      // entirely — no errors, no noise. The component mounts and its template
+      // renders static content; hydration populates the real values.
+      // Props (export let) are applied below so declared props work.
+    } else if (hasImports) {
+      const fn = new Function('__scope__', `return (async () => { with(__scope__) {\n${rewritten}\n} })()`);
+      await fn(scope);
+    } else {
+      // Newline before `}` so a script ending in a `//` comment still closes.
+      new Function('__scope__', `with(__scope__) {\n${rewritten}\n}`)(scope);
+    }
     ready = true;
     // Props override `export let` defaults.
     for (const [key, value] of Object.entries(props)) {
       if (propNames.has(key)) raw[key] = value;
       else if (!Object.hasOwn(raw, key)) raw[key] = value;
     }
-    runReactive();
+    if (!(isPrerender() && hasImports)) {
+      runReactive();
+    }
     patch(componentEl, scope);
     patchSlots();
   } catch (e) {
@@ -2148,8 +2227,7 @@ function runElementPlan(el, scope) {
       try {
         result = compileExpr(op.expr)(scope);
       } catch (e) {
-        // Evaluation failed — leave the attribute untouched (event handlers
-        // may still need to read it) but tell the consumer once.
+        if (isPrerender()) continue;
         warnOnce(
           `attr:${op.name}=${op.expr}`,
           `[spark] Error in :${op.realAttr}="${op.expr}" — ${e.message}. (Attribute left unchanged.)`,
@@ -2212,7 +2290,7 @@ function isSparkComponent(el) {
   return false;
 }
 
-function bootComponent(el) {
+async function bootComponent(el) {
   if (el.__sparkBooted) return;
   if (!isSparkComponent(el)) return; // a bare native `name=` (form field) — skip
   el.__sparkBooted = true;
@@ -2251,7 +2329,7 @@ function bootComponent(el) {
     }
 
     if (scriptSrc) {
-      el.__sparkScope = makeScope(scriptSrc, el, el.__sparkProps || {});
+      el.__sparkScope = await makeScope(scriptSrc, el, el.__sparkProps || {});
     } else {
       el.__sparkScope = {};
       patch(el, el.__sparkScope);
@@ -2555,8 +2633,8 @@ async function mount(root = document.body, options = {}) {
 
   const run = async () => {
     await resolveImports(root);
-    root.querySelectorAll('[name]').forEach(bootComponent);
-    if (root.hasAttribute && root.hasAttribute('name')) bootComponent(root);
+    await Promise.all([...root.querySelectorAll('[name]')].map(bootComponent));
+    if (root.hasAttribute && root.hasAttribute('name')) await bootComponent(root);
     // Safety net: anything still cloaked (e.g. a component whose script
     // threw before the rAF reveal) is shown now, so a bug can never leave
     // the page permanently invisible.
