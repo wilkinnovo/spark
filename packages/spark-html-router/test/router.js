@@ -6,8 +6,14 @@ import { strict as assert } from 'node:assert';
 // ── stub location + history + event listeners ──
 const listeners = { click: [], popstate: [] };
 globalThis.location = { origin: 'http://localhost', href: 'http://localhost/', pathname: '/', search: '', hash: '' };
+let replaceCalls = 0;
 globalThis.history = {
   pushState(_s, _t, url) {
+    const u = new URL(url, location.href);
+    location.pathname = u.pathname; location.search = u.search; location.hash = u.hash; location.href = u.href;
+  },
+  replaceState(_s, _t, url) {
+    replaceCalls++;
     const u = new URL(url, location.href);
     location.pathname = u.pathname; location.search = u.search; location.hash = u.hash; location.href = u.href;
   },
@@ -151,6 +157,46 @@ await test('an exact route wins over a dynamic one', async () => {
   has('My profile');
   hasnt('User me');
 });
+// ── reactive query string (route.query) ──
+await test('route.query parses the URL search params on navigation', async () => {
+  await navigate('/projects?page=2&q=hello');
+  await tick();
+  has('Our projects');
+  assert.equal(location.search, '?page=2&q=hello', 'query preserved in the URL');
+  assert.equal(store('route').query.page, '2');
+  assert.equal(store('route').query.q, 'hello');
+});
+await test('writing route.query updates the URL bar via replaceState (no navigation)', async () => {
+  const route = store('route');
+  const before = replaceCalls;
+  route.query.page = '3';
+  await tick();
+  assert.ok(replaceCalls > before, 'replaceState used (no history entry)');
+  assert.equal(location.search, '?page=3&q=hello', 'URL bar reflects the write');
+  assert.equal(route.path, '/projects', 'still on the same route');
+  has('Our projects');
+});
+await test('setting a query param to null removes it from the URL', async () => {
+  const route = store('route');
+  route.query.q = null;
+  await tick();
+  assert.equal(location.search, '?page=3', '?q dropped');
+});
+await test('navigating without a query string clears route.query', async () => {
+  await navigate('/about');
+  await tick();
+  assert.equal(location.search, '', 'URL query cleared');
+  assert.deepEqual({ ...store('route').query }, {}, 'store query cleared');
+});
+await test('a component reacts to route.query changes', async () => {
+  await navigate('/projects?page=7');
+  await tick();
+  assert.equal(store('route').query.page, '7');
+  store('route').query.page = '8';
+  await tick();
+  assert.equal(location.search, '?page=8');
+});
+
 await test('Back/Forward (popstate) re-renders the route', async () => {
   location.pathname = '/projects';
   firePopstate();

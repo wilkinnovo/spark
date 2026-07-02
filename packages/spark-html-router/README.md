@@ -127,6 +127,31 @@ Precedence: **exact → dynamic → catch-all**. Navigating between two matches 
 the same dynamic route (`/blog/1` → `/blog/2`) re-mounts the route with the new
 params.
 
+## Query string — `route.query`
+
+The URL's search params are a plain reactive object on the `route` store — no
+manual `location.search` parsing, no popstate wiring:
+
+```html
+<script>
+  const route = useStore('route');
+  let page = 1;
+  $: page = Number(route.query.page || 1);      // ?page=2 → 2
+
+  function next() {
+    route.query.page = String(page + 1);        // updates the URL bar + re-renders
+  }
+</script>
+```
+
+- Reading: `route.query` mirrors `URLSearchParams` as `{ page: "2", q: "hi" }`
+  (values are strings, like the platform gives them).
+- Writing `route.query.page = "3"` updates the URL **in place** via
+  `replaceState` — shareable state with no navigation and no history entry.
+- Setting a param to `null`/`undefined`/`''` removes it from the URL.
+- `navigate('/projects?page=2')` works; navigating without a query string
+  clears `route.query` (the URL is the source of truth).
+
 ## Nested routes & layouts
 
 Nest `<template route>` blocks to build a persistent layout with swappable

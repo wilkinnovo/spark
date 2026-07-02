@@ -68,6 +68,27 @@ built-in default 404 when none is declared). A `404.html` you ship yourself
 (e.g. from `public/`) or a declared `/404` route always wins — the generated
 one is skipped.
 
+### sitemap.xml + robots.txt
+
+Routed entries also generate the SEO files nobody should hand-maintain:
+
+```js
+prerender({
+  site: 'https://example.com',                     // enables sitemap.xml
+  extraRoutes: async () => (await getProjects()).map((p) => `/projects/${p.slug}`),
+});
+```
+
+- **`robots.txt`** is emitted with zero config (`Allow: /`); with `site` set it
+  also references the sitemap.
+- **`sitemap.xml`** (requires `site` — the spec wants absolute URLs) lists every
+  concrete route; `extraRoutes` adds data-driven URLs (CMS slugs etc.).
+- Mark a route **`<template route="/admin" noindex>`**: it's excluded from the
+  sitemap, `Disallow`ed in robots.txt, and its prerendered page gets a
+  `<meta name="robots" content="noindex">`.
+- Your own `sitemap.xml` / `robots.txt` (e.g. from `public/`) are never
+  overwritten. The CLI takes `--site <url>` for the same behavior.
+
 ### Options
 
 | Flag | Meaning |

@@ -15,12 +15,14 @@
  *                        the entry file's dir; also tries <root>/public, /dist).
  *   --vercel-root <dir>  Where to write vercel.json (default: cwd). Vercel reads
  *                        its config from the project root, not the build output.
+ *   --site <url>         Deployed origin (https://example.com). Enables
+ *                        sitemap.xml + the Sitemap: line in robots.txt.
  *   -h, --help           Show this help.
  */
 import { writeFile, mkdir, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { resolve, dirname, join, basename } from 'node:path';
-import { prerender, routesOf, routeToFile, redirectsFor, vercelConfigFor, NOT_FOUND_ROUTE } from '../src/prerender.js';
+import { prerender, routesOf, routeToFile, redirectsFor, vercelConfigFor, NOT_FOUND_ROUTE, noindexRoutesOf, sitemapFor, robotsFor } from '../src/prerender.js';
 
 function parseArgs(argv) {
   const entries = [];
@@ -31,6 +33,7 @@ function parseArgs(argv) {
     else if (a === '--out') opts.out = argv[++i];
     else if (a === '--root') opts.root = argv[++i];
     else if (a === '--vercel-root') opts.vercelRoot = argv[++i];
+    else if (a === '--site') opts.site = argv[++i];
     else if (a.startsWith('--')) { console.error(`Unknown option: ${a}`); process.exit(2); }
     else entries.push(a);
   }
@@ -40,7 +43,7 @@ function parseArgs(argv) {
 const HELP = `spark-prerender — SEO prerender for spark-html
 
 Usage:
-  spark-prerender <page.html> [more.html ...] [--out <dir>] [--root <dir>] [--vercel-root <dir>]
+  spark-prerender <page.html> [more.html ...] [--out <dir>] [--root <dir>] [--vercel-root <dir>] [--site <url>]
 
 Examples:
   spark-prerender dist/index.html dist/docs.html
@@ -60,7 +63,8 @@ async function main() {
     const outDir = opts.out ? resolve(opts.out) : dirname(entryAbs);
     try {
       // A routed entry (spark-html-router) expands to one file per route.
-      const routes = routesOf(await readFile(entryAbs, 'utf8'));
+      const source = await readFile(entryAbs, 'utf8');
+      const routes = routesOf(source);
       if (routes.length) {
         const all = routes.includes('/') ? routes : ['/', ...routes];
         // Render every route from the ORIGINAL entry first, then write — the
@@ -90,6 +94,18 @@ async function main() {
         await writeFile(join(outDir, '_redirects'), redirectsFor(all), 'utf8');
         await writeFile(join(vercelRoot, 'vercel.json'), vercelConfigFor(all), 'utf8');
         console.log(`✓ wrote _redirects (${outDir}) + vercel.json (${vercelRoot}) — ${all.length} routes`);
+        // sitemap.xml (needs --site for absolute URLs) + robots.txt. noindex
+        // routes are excluded/disallowed; existing files are never overwritten.
+        const noindex = noindexRoutesOf(source);
+        if (opts.site && !existsSync(join(outDir, 'sitemap.xml'))) {
+          const indexable = all.filter((r) => !noindex.includes(r));
+          await writeFile(join(outDir, 'sitemap.xml'), sitemapFor(indexable, opts.site), 'utf8');
+          console.log(`✓ wrote sitemap.xml — ${indexable.length} URLs`);
+        }
+        if (!existsSync(join(outDir, 'robots.txt'))) {
+          await writeFile(join(outDir, 'robots.txt'), robotsFor({ site: opts.site, noindex }), 'utf8');
+          console.log('✓ wrote robots.txt');
+        }
         continue;
       }
 

@@ -6,7 +6,7 @@ import { strict as assert } from 'node:assert';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { readFileSync } from 'node:fs';
-import { prerender, routesOf, routeToFile, redirectsFor, vercelConfigFor, NOT_FOUND_ROUTE } from '../src/prerender.js';
+import { prerender, routesOf, routeToFile, redirectsFor, vercelConfigFor, NOT_FOUND_ROUTE, noindexRoutesOf, sitemapFor, robotsFor } from '../src/prerender.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const entry = join(here, 'fixture', 'routed.html');
@@ -87,6 +87,51 @@ await test('redirects + vercel config rewrite clean URLs with an SPA fallback', 
   assert.ok(red.trim().endsWith('/*  /index.html  200'), 'SPA fallback last');
   const vercel = JSON.parse(vercelConfigFor(routes));
   assert.ok(vercel.rewrites.some((r) => r.source === '/about' && r.destination === '/about.html'));
+});
+
+// ── SEO: sitemap.xml, robots.txt, noindex ──
+
+await test('noindexRoutesOf() finds routes marked noindex (incl. dynamic)', () => {
+  const html = '<body>' +
+    '<template route="/"><p>h</p></template>' +
+    '<template route="/admin" noindex><p>a</p></template>' +
+    '<template route="/drafts/:id" noindex><p>d</p></template>' +
+    '<template route="*" noindex><p>nf</p></template>' +
+    '</body>';
+  assert.deepEqual(noindexRoutesOf(html), ['/admin', '/drafts/:id'], 'catch-all ignored');
+});
+
+await test('sitemapFor() emits absolute URLs per route', () => {
+  const xml = sitemapFor(['/', '/about', '/a/b'], 'https://example.com/');
+  assert.ok(xml.startsWith('<?xml version="1.0"'), 'xml prolog');
+  assert.ok(xml.includes('<loc>https://example.com/</loc>'), 'root URL');
+  assert.ok(xml.includes('<loc>https://example.com/about</loc>'), 'clean URLs');
+  assert.ok(xml.includes('<loc>https://example.com/a/b</loc>'), 'nested route');
+  assert.ok(!xml.includes('.html'), 'no file extensions in the sitemap');
+});
+
+await test('robotsFor() allows all, disallows noindex, references the sitemap', () => {
+  const txt = robotsFor({ site: 'https://example.com', noindex: ['/admin', '/drafts/:id'] });
+  assert.ok(txt.includes('User-agent: *'), 'UA line');
+  assert.ok(txt.includes('Allow: /'), 'allow all');
+  assert.ok(txt.includes('Disallow: /admin'), 'concrete noindex disallowed');
+  assert.ok(txt.includes('Disallow: /drafts/'), 'dynamic noindex → static prefix');
+  assert.ok(txt.includes('Sitemap: https://example.com/sitemap.xml'), 'sitemap referenced');
+});
+
+await test('robotsFor() without a site omits the Sitemap line (zero config)', () => {
+  const txt = robotsFor();
+  assert.ok(txt.includes('Allow: /'));
+  assert.ok(!txt.includes('Sitemap:'), 'no sitemap URL without an origin');
+});
+
+await test('a noindex route prerenders WITH <meta name="robots" content="noindex">', async () => {
+  const seoEntry = join(here, 'fixture', 'routed-seo.html');
+  const admin = await prerender(seoEntry, { route: '/admin' });
+  assert.ok(/<meta[^>]*name="robots"[^>]*>/.test(admin) && admin.includes('content="noindex"'),
+    'noindex meta injected');
+  const home = await prerender(seoEntry, { route: '/' });
+  assert.ok(!home.includes('content="noindex"'), 'indexable routes untouched');
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

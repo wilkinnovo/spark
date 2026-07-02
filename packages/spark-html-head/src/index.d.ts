@@ -1,5 +1,10 @@
 /**
- * spark-html-head — reactive document <title>/<meta> per route. Zero deps.
+ * spark-html-head — reactive document <title>/<meta> per route.
+ *
+ * Also exposes a reactive `head` store (via spark-html's `store('head')`):
+ * components write `head.title` / `head.description` / any meta key with
+ * `useStore('head')` and the document updates immediately; the `head()`
+ * config below is the fallback. Overrides clear on every path change.
  */
 
 export interface HeadOptions {
@@ -22,8 +27,9 @@ export interface HeadOptions {
 
 /**
  * Keep the document `<title>`/`<meta>` in sync with the route — hooks the
- * History API + popstate, so it updates on every navigation. Returns a
- * `stop()` function.
+ * History API + popstate, so it updates on every navigation. Also registers
+ * the reactive `head` store for per-component overrides. Returns a `stop()`
+ * function.
  */
 export function head(options?: HeadOptions): () => void;
 

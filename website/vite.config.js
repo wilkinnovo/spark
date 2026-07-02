@@ -85,6 +85,10 @@ export default defineConfig({
   // <template route> blocks and emits one fully-rendered HTML file per route,
   // plus 404.html — GitHub Pages serves it for unknown paths, and since the
   // full app shell + router ship in it, deep links still resolve client-side
-  // (this replaced the old spa404() copy-index.html workaround).
-  plugins: [sparkStats(), spark(), prerender({ prerender: { fetch: prerenderFetch } })],
+  // (this replaced the old spa404() copy-index.html workaround) — plus
+  // sitemap.xml + robots.txt (site = the GitHub Pages origin + base).
+  plugins: [sparkStats(), spark(), prerender({
+    site: 'https://wilkinnovo.github.io' + (base === '/' ? '' : base.replace(/\/$/, '')),
+    prerender: { fetch: prerenderFetch },
+  })],
 });

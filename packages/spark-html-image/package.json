@@ -1,0 +1,44 @@
+{
+  "name": "spark-html-image",
+  "version": "0.1.0",
+  "description": "Build-time image optimization for spark-html sites — a Vite plugin that converts <img> references to webp/avif with responsive srcset, zero config.",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "homepage": "https://wilkinnovo.github.io/spark",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./vite": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    }
+  },
+  "scripts": {
+    "test": "node test/image.js"
+  },
+  "files": [
+    "src"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wilkinnovo/spark.git",
+    "directory": "packages/spark-html-image"
+  },
+  "dependencies": {
+    "linkedom": "^0.18.12",
+    "sharp": "^0.34.0"
+  },
+  "keywords": [
+    "spark-html",
+    "vite-plugin",
+    "images",
+    "webp",
+    "avif",
+    "srcset",
+    "optimization"
+  ],
+  "license": "MIT"
+}

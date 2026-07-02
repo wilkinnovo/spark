@@ -21,12 +21,18 @@
 import { resolve, join, dirname } from 'node:path';
 import { writeFile, mkdir, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { prerender, routesOf, routeToFile, redirectsFor, vercelConfigFor, NOT_FOUND_ROUTE } from './prerender.js';
+import { prerender, routesOf, routeToFile, redirectsFor, vercelConfigFor, NOT_FOUND_ROUTE, noindexRoutesOf, sitemapFor, robotsFor } from './prerender.js';
 
 /**
  * @param {object} [options]
  * @param {string[]} [options.pages=['index.html']] HTML files in the out dir to prerender.
  * @param {object}   [options.prerender] Options forwarded to prerender() (e.g. fetch, meta).
+ * @param {string}   [options.site] Deployed origin (https://example.com). Enables
+ *                   sitemap.xml generation and the Sitemap: line in robots.txt.
+ * @param {string[]|(() => string[]|Promise<string[]>)} [options.extraRoutes]
+ *                   Additional sitemap routes for data-driven pages (e.g. project
+ *                   slugs from a CMS): ['/projects/a', '/projects/b'] or a
+ *                   (possibly async) function returning them.
  */
 export default function sparkPrerender(options = {}) {
   const pages = options.pages || ['index.html'];
@@ -46,7 +52,8 @@ export default function sparkPrerender(options = {}) {
         try {
           // A routed page (spark-html-router) expands to one file per route +
           // host rewrite rules.
-          const routes = routesOf(await readFile(file, 'utf8'));
+          const source = await readFile(file, 'utf8');
+          const routes = routesOf(source);
           if (routes.length) {
             const all = routes.includes('/') ? routes : ['/', ...routes];
             // Render every route from the ORIGINAL entry first, then write —
@@ -75,7 +82,28 @@ export default function sparkPrerender(options = {}) {
             // under dist/ is silently ignored.
             await writeFile(join(root, '_redirects'), redirectsFor(all), 'utf8');
             await writeFile(join(resolve(projectRoot), 'vercel.json'), vercelConfigFor(all), 'utf8');
-            console.log(`[spark-prerender] prerendered ${all.length} routes from ${page} (+ dist/_redirects, vercel.json)`);
+            // sitemap.xml + robots.txt — SEO files nobody should hand-maintain.
+            // <template route noindex> routes are excluded from the sitemap and
+            // disallowed in robots.txt; user-shipped files (e.g. from public/)
+            // always win. The sitemap needs absolute URLs, so it requires the
+            // `site` option; robots.txt is emitted either way.
+            const seo = [];
+            const noindex = noindexRoutesOf(source);
+            if (options.site && !existsSync(join(root, 'sitemap.xml'))) {
+              let extra = options.extraRoutes || [];
+              if (typeof extra === 'function') extra = await extra();
+              const indexable = all
+                .filter((r) => r !== NOT_FOUND_ROUTE && !noindex.includes(r))
+                .concat(extra);
+              await writeFile(join(root, 'sitemap.xml'), sitemapFor(indexable, options.site), 'utf8');
+              seo.push('sitemap.xml');
+            }
+            if (!existsSync(join(root, 'robots.txt'))) {
+              await writeFile(join(root, 'robots.txt'), robotsFor({ site: options.site, noindex }), 'utf8');
+              seo.push('robots.txt');
+            }
+            const extras = ['_redirects', 'vercel.json', ...seo].join(', ');
+            console.log(`[spark-prerender] prerendered ${all.length} routes from ${page} (+ ${extras})`);
             continue;
           }
           const html = await prerender(file, { root, projectRoot, ...(options.prerender || {}) });

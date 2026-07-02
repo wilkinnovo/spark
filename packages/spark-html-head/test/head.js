@@ -69,5 +69,42 @@ test('base is stripped before matching', () => {
   stop();
 });
 
+// ── the reactive `head` store: per-component overrides ──
+const { store } = await import('spark-html');
+const headStore = store('head');
+
+test('a store write overrides the config title VERBATIM (no titleTemplate)', () => {
+  nav('/about');
+  assert.equal(document.title, 'About · Site', 'config title first');
+  headStore.title = 'Parser · Novo';
+  assert.equal(document.title, 'Parser · Novo', 'store title wins, un-templated');
+});
+
+test('store meta keys override config and add new tags', () => {
+  headStore.description = 'a data-driven description';
+  assert.equal(
+    document.querySelector('meta[name="description"]').getAttribute('content'),
+    'a data-driven description', 'store overrides the config resolver');
+  headStore['og:image'] = 'https://x/img.png';
+  assert.equal(
+    document.querySelector('meta[property="og:image"]').getAttribute('content'),
+    'https://x/img.png', 'store-only keys are added');
+});
+
+test('overrides are cleared on path change (config fallback returns)', () => {
+  nav('/');
+  assert.equal(document.title, 'Home · Site', 'stale store title dropped');
+  assert.equal(headStore.title, undefined, 'store reset for the new route');
+  assert.equal(
+    document.querySelector('meta[name="description"]').getAttribute('content'),
+    'the / page', 'meta falls back to the config resolver');
+});
+
+test('a store write for the CURRENT route re-applies immediately', () => {
+  headStore.title = 'Live title';
+  assert.equal(document.title, 'Live title');
+  assert.equal(headStore.description, undefined, 'other keys untouched');
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

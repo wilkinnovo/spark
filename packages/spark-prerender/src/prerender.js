@@ -266,6 +266,14 @@ export async function prerender(entryPath, options = {}) {
         outlet.appendChild(child.cloneNode(true));
       }
       matched.after(outlet);
+      // <template route="/admin" noindex> — tell crawlers to skip this page
+      // (the route is also excluded from sitemap.xml / disallowed in robots.txt).
+      if (matched.hasAttribute('noindex') && document.head) {
+        const m = document.createElement('meta');
+        m.setAttribute('name', 'robots');
+        m.setAttribute('content', 'noindex');
+        document.head.appendChild(m);
+      }
     } else if (templates.length) {
       // No matching route and no user catch-all — bake the router's built-in
       // default 404 view (the client router injects the same markup at
@@ -519,6 +527,51 @@ export function routeToFile(route) {
   return r.replace(/^\//, '') + '.html';
 }
 
+// Routes marked `noindex` — <template route="/admin" noindex> — are excluded
+// from the sitemap and disallowed in robots.txt (their pages also get a
+// <meta name="robots" content="noindex">). Dynamic routes are included here
+// (their static prefix becomes a robots Disallow rule).
+export function noindexRoutesOf(html) {
+  const { document } = parseHTML(html);
+  return [...document.querySelectorAll('template[route][noindex]')]
+    .map((t) => t.getAttribute('route'))
+    .filter((r) => r && r !== '*')
+    .map(normalizeRoute);
+}
+
+// sitemap.xml for the given routes. `site` is the deployed origin
+// (https://example.com) — the sitemap spec requires absolute URLs.
+export function sitemapFor(routes, site) {
+  const origin = String(site || '').replace(/\/+$/, '');
+  const urls = [...new Set(routes.map(normalizeRoute))].map(
+    (r) => `  <url><loc>${origin}${r === '/' ? '/' : r}</loc></url>`,
+  );
+  return (
+    '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
+    urls.join('\n') +
+    '\n</urlset>\n'
+  );
+}
+
+// A dynamic noindex route (`/admin/:id`) disallows its static prefix.
+function robotsPathFor(route) {
+  const r = normalizeRoute(route);
+  const colon = r.indexOf('/:');
+  return colon === -1 ? r : r.slice(0, colon + 1);
+}
+
+// robots.txt: allow everything, disallow the noindex routes, reference the
+// sitemap when the site origin is known.
+export function robotsFor({ site, noindex = [] } = {}) {
+  const lines = ['User-agent: *', 'Allow: /'];
+  for (const r of noindex) lines.push(`Disallow: ${robotsPathFor(r)}`);
+  if (site) {
+    lines.push('', `Sitemap: ${String(site).replace(/\/+$/, '')}/sitemap.xml`);
+  }
+  return lines.join('\n') + '\n';
+}
+
 // Host rewrite rules so /about serves about.html, with an index.html SPA
 // fallback for anything unmatched (the client router shows the catch-all).
 export function redirectsFor(routes) {
@@ -537,4 +590,7 @@ export function vercelConfigFor(routes) {
   return JSON.stringify({ rewrites }, null, 2) + '\n';
 }
 
-export default { prerender, routesOf, routeToFile, redirectsFor, vercelConfigFor, NOT_FOUND_ROUTE };
+export default {
+  prerender, routesOf, routeToFile, redirectsFor, vercelConfigFor, NOT_FOUND_ROUTE,
+  noindexRoutesOf, sitemapFor, robotsFor,
+};

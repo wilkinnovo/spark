@@ -25,7 +25,7 @@
  *   const route = useStore('route');
  *   $: active = route.path === '/about';
  */
-import { mount, unmount, store } from 'spark-html';
+import { mount, unmount, store, subscribe } from 'spark-html';
 
 let base = '';
 let rootEl = null;
@@ -46,13 +46,60 @@ function currentPath() {
   return normalize((typeof location !== 'undefined' && location.pathname) || '/');
 }
 
-// Publish the active path + params to the reactive `route` store so any
-// component can `useStore('route')` and react (nav highlight, title, params…).
-// Created here BEFORE the first mount so components find it on boot.
+// ── Query string (?page=2) ─────────────────────────────────────────────
+// The URL's search params as a plain reactive object on the route store:
+// `route.query.page` reads "2", and WRITING `route.query.page = "3"` updates
+// the URL bar in place (replaceState — no navigation, no history entry) and
+// re-renders every subscriber. Shareable pagination/filter/tab state with no
+// manual location.search parsing.
+function parseQuery() {
+  const q = {};
+  if (typeof location === 'undefined') return q;
+  for (const [k, v] of new URLSearchParams(location.search || '')) q[k] = v;
+  return q;
+}
+
+// Serialize a query object; null/undefined/'' values drop the param (so
+// `route.query.page = null` removes ?page from the URL).
+function queryString(q) {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(q || {})) {
+    if (v != null && v !== '') sp.append(k, String(v));
+  }
+  const s = sp.toString();
+  return s ? '?' + s : '';
+}
+
+// Write `route.query` changes back to the URL bar. Runs on every route-store
+// notify; a no-op when the URL already matches (both sides normalized through
+// URLSearchParams, so ordering/encoding differences don't ping-pong).
+// Suppressed while setRoute() is mid-update: each store write notifies
+// synchronously, so the sync would otherwise see path already updated but
+// query still stale and rewrite the fresh URL with the old values.
+let settingRoute = false;
+function syncQueryToUrl() {
+  if (settingRoute) return;
+  if (!routeProxy || typeof history === 'undefined' || typeof location === 'undefined') return;
+  const wanted = queryString(routeProxy.query);
+  const current = queryString(parseQuery());
+  if (wanted === current) return;
+  history.replaceState({}, '', base + routeProxy.path + wanted + (location.hash || ''));
+}
+
+// Publish the active path + params + query to the reactive `route` store so
+// any component can `useStore('route')` and react (nav highlight, title,
+// params, pagination…). Created here BEFORE the first mount so components
+// find it on boot.
 function setRoute(path, params) {
-  if (!routeProxy) routeProxy = store('route', { path, params: params || {} });
-  routeProxy.path = path;
-  routeProxy.params = params || {};
+  if (!routeProxy) routeProxy = store('route', { path, params: params || {}, query: parseQuery() });
+  settingRoute = true;
+  try {
+    routeProxy.path = path;
+    routeProxy.params = params || {};
+    routeProxy.query = parseQuery(); // the URL is the source of truth on navigation
+  } finally {
+    settingRoute = false;
+  }
 }
 
 // Reflect the active route onto same-origin <a> links: set aria-current="page"
@@ -286,9 +333,11 @@ function afterNav(firstNew) {
   }
 }
 
-// Navigate to a route programmatically (path is route-relative; base is added).
+// Navigate to a route programmatically (path is route-relative; base is
+// added). A query string / hash ride along: navigate('/projects?page=2').
 export function navigate(to) {
-  const url = base + normalize(to);
+  const m = String(to).match(/^([^?#]*)(\?[^#]*)?(#.*)?$/);
+  const url = base + normalize(m[1] || '/') + (m[2] || '') + (m[3] || '');
   if (typeof history !== 'undefined') history.pushState({}, '', url);
   return render();
 }
@@ -337,6 +386,10 @@ export async function router(options = {}) {
 
   if (typeof document !== 'undefined') document.addEventListener('click', onClick);
   if (typeof window !== 'undefined') window.addEventListener('popstate', () => render({ isPop: true }));
+
+  // `route.query` writes reflect into the URL bar (no navigation). The store
+  // notify that triggered this already re-renders every subscriber.
+  subscribe('route', syncQueryToUrl);
 
   ensureCatchAll();      // built-in 404 for pages that declare no route="*"
   prepareInitial();      // put the active route's outlet in the DOM (adopt/clone)

@@ -122,5 +122,65 @@ await test('a user-provided 404.html is never overwritten', async () => {
   assert.ok(nf.includes('my very own 404'), "the user's 404.html survives the build untouched");
 });
 
+await test('site option: sitemap.xml + robots.txt emitted, noindex respected', async () => {
+  const proot = mkdtempSync(join(tmpdir(), 'spark-seo-'));
+  const rdist = join(proot, 'dist');
+  cpSync(join(here, 'fixture'), rdist, { recursive: true });
+  copyFileSync(join(here, 'fixture', 'routed-seo.html'), join(rdist, 'index.html'));
+
+  const p = sparkPrerender({
+    pages: ['index.html'],
+    site: 'https://example.com',
+    extraRoutes: () => ['/projects/alpha', '/projects/beta'],
+  });
+  p.configResolved({ root: proot, build: { outDir: rdist } });
+  await p.closeBundle();
+
+  const sitemap = readFileSync(join(rdist, 'sitemap.xml'), 'utf8');
+  assert.ok(sitemap.includes('<loc>https://example.com/</loc>'), 'root in sitemap');
+  assert.ok(sitemap.includes('<loc>https://example.com/about</loc>'), 'route in sitemap');
+  assert.ok(sitemap.includes('<loc>https://example.com/projects/alpha</loc>'), 'extraRoutes (dynamic data) included');
+  assert.ok(!sitemap.includes('/admin'), 'noindex route excluded from sitemap');
+
+  const robots = readFileSync(join(rdist, 'robots.txt'), 'utf8');
+  assert.ok(robots.includes('Disallow: /admin'), 'noindex disallowed');
+  assert.ok(robots.includes('Sitemap: https://example.com/sitemap.xml'), 'sitemap referenced');
+
+  const admin = readFileSync(join(rdist, 'admin.html'), 'utf8');
+  assert.ok(admin.includes('content="noindex"'), 'noindex meta baked into the page');
+});
+
+await test('no site option: robots.txt still emitted (no Sitemap line), no sitemap.xml', async () => {
+  const proot = mkdtempSync(join(tmpdir(), 'spark-seo0-'));
+  const rdist = join(proot, 'dist');
+  cpSync(join(here, 'fixture'), rdist, { recursive: true });
+  copyFileSync(join(here, 'fixture', 'routed.html'), join(rdist, 'index.html'));
+
+  const p = sparkPrerender({ pages: ['index.html'] });
+  p.configResolved({ root: proot, build: { outDir: rdist } });
+  await p.closeBundle();
+
+  assert.ok(!existsSync(join(rdist, 'sitemap.xml')), 'sitemap needs a site origin');
+  const robots = readFileSync(join(rdist, 'robots.txt'), 'utf8');
+  assert.ok(robots.includes('Allow: /'), 'zero-config robots.txt');
+  assert.ok(!robots.includes('Sitemap:'), 'no sitemap reference without site');
+});
+
+await test('user-shipped sitemap.xml / robots.txt are never overwritten', async () => {
+  const proot = mkdtempSync(join(tmpdir(), 'spark-seou-'));
+  const rdist = join(proot, 'dist');
+  cpSync(join(here, 'fixture'), rdist, { recursive: true });
+  copyFileSync(join(here, 'fixture', 'routed.html'), join(rdist, 'index.html'));
+  writeFileSync(join(rdist, 'sitemap.xml'), '<my-sitemap/>', 'utf8');
+  writeFileSync(join(rdist, 'robots.txt'), '# my rules\n', 'utf8');
+
+  const p = sparkPrerender({ pages: ['index.html'], site: 'https://example.com' });
+  p.configResolved({ root: proot, build: { outDir: rdist } });
+  await p.closeBundle();
+
+  assert.equal(readFileSync(join(rdist, 'sitemap.xml'), 'utf8'), '<my-sitemap/>');
+  assert.equal(readFileSync(join(rdist, 'robots.txt'), 'utf8'), '# my rules\n');
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
