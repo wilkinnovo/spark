@@ -313,7 +313,8 @@ function interpolate(template, scope) {
     if (typeof s === 'string') {
       out += s;
     } else {
-      const v = evaluate(s.code, scope);
+      // s.fn was compiled at parse time — skip the expr-cache lookup.
+      const v = runExpr(s.fn, s.code, scope);
       out += v == null ? '' : String(v);
     }
   }
