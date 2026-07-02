@@ -15,7 +15,7 @@ Single-file HTML components with built-in reactivity. No compiler, no virtual DO
 </style>
 ```
 
-**11 kB gzipped**.
+**12 kB gzipped**.
 
 ---
 
@@ -109,6 +109,28 @@ Declarative loading states with no manual flags:
 - `<template await="once(expr)">` fires only on mount.
 - Non-promise expressions render `then` immediately.
 - `spark-prerender` bakes resolved content into static HTML at build time.
+
+### JS imports
+
+Standard `import` statements work at the top of a component's `<script>` — Spark replays them as dynamic `import()` calls, so there's still no build step:
+
+```html
+<!-- components/counter.html -->
+<h2>Count: {count}</h2>
+<p>{fmt(count)}</p>
+<button onclick={inc}>+1</button>
+
+<script>
+  import { fmt } from '../lib/format.js';
+  let count = 0;
+  function inc() { count++; }
+</script>
+```
+
+- All forms: named (`{ a, b as c }`), default, namespace (`* as m`), side-effect.
+- Relative / root-absolute paths resolve against the **component file's** URL; bare specifiers are left to the browser's import maps.
+- A script with imports runs async (top-level `await` works); the component reveals only after its modules load, and `mount()` resolves when everything is booted.
+- `spark-prerender` executes imports for real at build time, so prerendered HTML contains the actual computed values.
 
 ### Props
 
@@ -292,3 +314,4 @@ component('hello', `
 - **Class instances / `Date`** — not deeply reactive (intentional). Reassign the variable to trigger an update. Plain objects, arrays, `Map`, and `Set` are all tracked.
 - **Loops reconcile by index by default** — add `key="…"` for identity-stable reordering (keeps focus, preserves element state).
 - **CSP** — the runtime uses `new Function` for expressions and event handlers, so a strict Content Security Policy needs `unsafe-eval`.
+- **`import.meta`** — not available inside component scripts (imports are replayed as dynamic `import()`). Bare specifiers need an import map when running without a bundler.

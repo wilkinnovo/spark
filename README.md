@@ -22,13 +22,14 @@ byte-for-byte — reactive, scoped, untouched.
 <button onclick={inc}>+1</button>
 
 <script>
+  import { fmt } from './format.js';   // standard JS imports work too
   let count = 0;
   function inc() { count++; }
 </script>
 ```
 
 No compiler generates code from your template. No virtual DOM allocates and diffs
-a tree per frame. The file you write is what runs — 11 kB gzipped, zero dependencies.
+a tree per frame. The file you write is what runs — 12 kB gzipped, zero dependencies.
 
 ## Quick start
 
@@ -74,7 +75,7 @@ just files at a URL, so you can even `import` one straight from a CDN. See
   template. The file you write is what runs.
 - **No virtual DOM** — patches mutate the DOM directly. No intermediate tree to
   allocate, diff, or discard per frame.
-- **11 kB gzipped, zero dependencies** — parses, mounts, and patches in a single
+- **12 kB gzipped, zero dependencies** — parses, mounts, and patches in a single
   microtask.
 - **O(changed) dependency tracking** — each binding records which scope keys it
   reads. A write re-evaluates only the bindings that actually changed.
@@ -110,6 +111,7 @@ just files at a URL, so you can even `import` one straight from a CDN. See
 - **Class instances / `Date`** — not deeply reactive (intentional). Reassign the variable to trigger an update. Plain objects, arrays, `Map`, and `Set` are all tracked.
 - **Loops reconcile by index by default** — add `key="…"` for identity-stable reordering (keeps focus, preserves element state).
 - **CSP** — the runtime uses `new Function` for expressions and event handlers, so a strict Content Security Policy needs `unsafe-eval`.
+- **`import.meta`** — not available inside component scripts (imports are replayed as dynamic `import()`). Bare specifiers need an import map when running without a bundler.
 
 ## How it works
 
@@ -138,7 +140,7 @@ just files at a URL, so you can even `import` one straight from a CDN. See
 
 | Package | What it does |
 |---|---|
-| [`spark-html`](packages/spark/README.md) | The runtime — `mount()`, components, reactivity, `store`/`derived`, `bind:form`, scoped styles. 11 kB gzip, 0 deps. |
+| [`spark-html`](packages/spark/README.md) | The runtime — `mount()`, components, reactivity, `store`/`derived`, `bind:form`, scoped styles. 12 kB gzip, 0 deps. |
 
 **Optional sibling packages** (add only what you use)
 

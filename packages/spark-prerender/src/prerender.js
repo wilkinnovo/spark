@@ -11,6 +11,7 @@
  */
 import { readFile, access } from 'node:fs/promises';
 import { resolve, dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { parseHTML } from 'linkedom';
 
 // A component request is a relative `*.html` (the runtime always appends
@@ -223,12 +224,17 @@ function serialize(document) {
 export async function prerender(entryPath, options = {}) {
   const entryAbs = resolve(entryPath);
   const baseRoot = options.root ? resolve(options.root) : dirname(entryAbs);
-  const roots = (options.componentRoots || [
-    baseRoot,
-    join(baseRoot, 'public'),
-    join(baseRoot, 'dist'),
-    dirname(entryAbs),
-  ]).filter((v, i, a) => a.indexOf(v) === i);
+  const roots = [
+    ...(options.componentRoots || [
+      baseRoot,
+      join(baseRoot, 'public'),
+      join(baseRoot, 'dist'),
+      dirname(entryAbs),
+    ]),
+    // The Vite plugin passes the project root so JS-import specifiers that
+    // point outside the build output (e.g. un-copied src files) still resolve.
+    ...(options.projectRoot ? [resolve(options.projectRoot)] : []),
+  ].filter((v, i, a) => a.indexOf(v) === i);
   const metaMap = options.meta || DEFAULT_META;
   const maxPasses = options.maxPasses ?? 100;
   // For data requests a load() hook makes (not component files).
@@ -355,11 +361,38 @@ export async function prerender(entryPath, options = {}) {
 
   // Collector for <template await> promises. The runtime pushes each pending
   // promise here during prerender; the settle loop drains + awaits them (like
-  // load()) so :then content lands in the serialized HTML.
+  // load()) so :then content lands in the serialized HTML. Component-script
+  // promises (JS imports make a script async) ride the same channel.
   const awaits = [];
 
+  // ── JS imports inside component scripts. The runtime hands us the raw
+  //    specifier + the importing component's request path; we load the module
+  //    from disk with Node's REAL ESM loader — so prerendered HTML contains
+  //    the actual computed values, not stubs. Relative and root-absolute
+  //    specifiers resolve against the component file's location within the
+  //    same roots used for component files; bare specifiers go to Node's
+  //    resolver (the project's node_modules).
+  const importModule = async (spec, importerPath) => {
+    const clean = String(spec).split(/[?#]/)[0];
+    if (/^\.{0,2}\//.test(clean)) {
+      const importerRel = String(importerPath || '').split(/[?#]/)[0].replace(/^\/+/, '');
+      const importerDir = importerRel.includes('/')
+        ? importerRel.slice(0, importerRel.lastIndexOf('/'))
+        : '';
+      for (const root of roots) {
+        const file = clean.startsWith('/')
+          ? join(root, clean.slice(1))
+          : join(root, importerDir, clean);
+        try { await access(file); } catch { continue; }
+        return import(pathToFileURL(file).href);
+      }
+      throw new Error(`cannot resolve "${spec}" from "${importerPath || 'inline component'}"`);
+    }
+    return import(spec); // bare specifier — Node resolution
+  };
+
   return withGlobals(
-    { window, document, Node: window.Node, requestAnimationFrame, fetch, __SPARK_PRERENDER__: true, __SPARK_AWAITS__: awaits, ...stubs },
+    { window, document, Node: window.Node, requestAnimationFrame, fetch, __SPARK_PRERENDER__: true, __SPARK_AWAITS__: awaits, __SPARK_IMPORT__: importModule, ...stubs },
     async () => {
       // Import the runtime FRESH per page (cache-busted) so its module-load
       // cloak + caches bind to THIS document, and pages stay isolated.

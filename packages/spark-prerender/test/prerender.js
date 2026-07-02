@@ -156,5 +156,34 @@ await test('custom stubs override the defaults (deterministic)', async () => {
   assert.ok(dark.includes('theme: dark'), 'custom matchMedia stub → dark');
 });
 
+// ── JS imports in <script> tags ──
+console.log('\nspark-prerender — JS imports');
+
+const jsImportEntry = join(here, 'fixture', 'jsimport.html');
+const jsImportHtml = await prerender(jsImportEntry);
+const jihas = (s) => assert.ok(jsImportHtml.includes(s), `expected jsimport output to include: ${s}`);
+
+await test('a component with JS imports prerenders its structure', () => {
+  jihas('class="imported"');
+  jihas('class="greeting"');
+  jihas('class="count"');
+});
+
+await test('imports EXECUTE at build time — real values land in the HTML', () => {
+  // capitalize('hello world') and pluralize(3, 'item') ran for real.
+  jihas('Hello world');
+  jihas('3 items');
+});
+
+await test('host has [import] for client-side hydration of imported values', () => {
+  jihas('name="imported"');
+  jihas('import="components/imported.html"');
+});
+
+await test('component <style> from an importing component is still scoped + injected', () => {
+  jihas('[name="imported"]');
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
+

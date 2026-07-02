@@ -524,6 +524,9 @@ async function resolveImportNode(node, scope = null) {
       bootComponent(host);
       const nested = [...host.querySelectorAll('[name]')];
       nested.forEach(bootComponent);
+      // Scripts with JS imports finish async — wait so the swap is flash-free.
+      const waits = [host, ...nested].map((n) => n.__sparkScriptReady).filter(Boolean);
+      if (waits.length) await Promise.all(waits);
       reveal(host);
       nested.forEach(reveal);
     }
@@ -775,7 +778,10 @@ function isPlainContainer(v) {
   if (Array.isArray(v)) return true;
   if (v === null || typeof v !== 'object') return false;
   const proto = Object.getPrototypeOf(v);
-  return proto === Object.prototype || proto === null;
+  if (proto !== Object.prototype && proto !== null) return false;
+  // A module namespace (`import * as ns`) is null-proto but sealed — wrapping
+  // it would make writes throw and identity churn. Leave it raw.
+  return v[Symbol.toStringTag] !== 'Module';
 }
 
 // Mutating methods that should trigger a re-render, per collection type.
@@ -1071,11 +1077,175 @@ function extractReactiveStatements(src) {
   return { code: out, reactiveStmts };
 }
 
-// ─── Reactive scope ────────────────────────────────────────────────────
-function makeScope(rawCode, componentEl, props = {}) {
+// ─── JS imports inside component scripts ───────────────────────────────
+// `import { add } from './add.js'` at the top level of a component <script>
+// is real, standard syntax — but component scripts run through new Function,
+// where import DECLARATIONS are illegal. So we lift them out with the same
+// string/comment/depth-aware scanning the `$:` extractor uses, and replay
+// them as dynamic `await __import__("spec")` assignments hoisted to the top
+// of the script (matching ESM's hoisted-imports-evaluate-first semantics).
+// The imported locals are seeded as scope keys, so they're reactive-readable
+// and dep-trackable exactly like `let` state. A script WITH imports runs as
+// an async function (which also makes top-level `await` legal in it); a
+// script without imports keeps the untouched synchronous fast path.
+
+// Parse ONE `import …` statement starting at `start` (which points at the
+// `import` keyword). Returns { end, spec, defaultName, nsName, named } or
+// null when malformed — in which case the statement is left in the code and
+// surfaces as a normal syntax error.
+function parseImportStatement(src, start) {
+  let i = start + 6; // past 'import'
+  let clause = '';
+  let depth = 0;
+  while (i < src.length) {
+    const c = src[i];
+    if (c === '"' || c === "'") {
+      if (depth === 0) break; // the module specifier string
+      const j = skipString(src, i); // a string import name inside { }
+      clause += src.slice(i, j);
+      i = j;
+      continue;
+    }
+    if (c === ';' && depth === 0) return null; // no specifier — malformed
+    if (c === '{') depth++;
+    else if (c === '}') depth--;
+    clause += c;
+    i++;
+  }
+  if (i >= src.length) return null;
+  const qEnd = skipString(src, i);
+  if (qEnd > src.length || src[qEnd - 1] !== src[i]) return null; // unterminated
+  const spec = src.slice(i + 1, qEnd - 1);
+  i = qEnd;
+  while (i < src.length && (src[i] === ' ' || src[i] === '\t')) i++;
+  if (src[i] === ';') i++;
+
+  clause = clause.replace(/\bfrom\s*$/, '').trim();
+  let defaultName = null;
+  let nsName = null;
+  const named = []; // [objectKeySource, localName]
+  let rest = clause;
+  if (/^[a-zA-Z_$]/.test(rest)) {
+    const dm = rest.match(/^([a-zA-Z_$][\w$]*)\s*(?:,\s*)?/);
+    defaultName = dm[1];
+    rest = rest.slice(dm[0].length);
+  }
+  if (rest.startsWith('*')) {
+    const nm = rest.match(/^\*\s*as\s+([a-zA-Z_$][\w$]*)\s*$/);
+    if (!nm) return null;
+    nsName = nm[1];
+  } else if (rest.startsWith('{')) {
+    const close = rest.lastIndexOf('}');
+    if (close === -1) return null;
+    const inner = rest.slice(1, close);
+    // Entries: `a`, `a as b`, `default as b`, `"str-name" as b`.
+    const partRe = /(['"])([\s\S]*?)\1\s*as\s+([a-zA-Z_$][\w$]*)|([a-zA-Z_$][\w$]*)(?:\s+as\s+([a-zA-Z_$][\w$]*))?/g;
+    let pm;
+    while ((pm = partRe.exec(inner)) !== null) {
+      if (!pm[0].trim()) { partRe.lastIndex++; continue; }
+      if (pm[2] !== undefined) named.push([JSON.stringify(pm[2]), pm[3]]);
+      else named.push([pm[4], pm[5] || pm[4]]);
+    }
+  } else if (rest) {
+    return null; // something we don't recognize
+  }
+  return { end: i, spec, defaultName, nsName, named };
+}
+
+// Pull every top-level import statement out of the script. Returns the
+// cleaned code (imports blanked to newlines so line numbers stay put) and
+// the parsed import list. `import(` (dynamic) and `import.meta` are left
+// alone, as is anything inside strings, comments, or nested braces.
+function extractImports(src) {
+  const imports = [];
+  let out = '';
+  let i = 0;
+  let depth = 0;
+  while (i < src.length) {
+    const c = src[i];
+    if (c === '"' || c === "'" || c === '`') { const j = skipString(src, i); out += src.slice(i, j); i = j; continue; }
+    if (c === '/' && src[i + 1] === '/') { const s = i; while (i < src.length && src[i] !== '\n') i++; out += src.slice(s, i); continue; }
+    if (c === '/' && src[i + 1] === '*') { const s = i; i += 2; while (i < src.length && !(src[i] === '*' && src[i + 1] === '/')) i++; i += 2; out += src.slice(s, i); continue; }
+    if (OPEN.includes(c)) { depth++; out += c; i++; continue; }
+    if (CLOSE.includes(c)) { depth--; out += c; i++; continue; }
+    if (depth === 0 && c === 'i' && src.startsWith('import', i) && !/[\w$]/.test(src[i + 6] || '')) {
+      // Only at a statement boundary: start of script, or after ; { } newline.
+      let j = out.length - 1;
+      while (j >= 0 && (out[j] === ' ' || out[j] === '\t')) j--;
+      const prev = j < 0 ? '\n' : out[j];
+      if (prev === '\n' || prev === ';' || prev === '{' || prev === '}') {
+        let k = i + 6;
+        while (k < src.length && /\s/.test(src[k])) k++;
+        if (src[k] !== '(' && src[k] !== '.') { // not import() / import.meta
+          const parsed = parseImportStatement(src, i);
+          if (parsed) {
+            imports.push(parsed);
+            out += src.slice(i, parsed.end).replace(/[^\n]/g, '');
+            i = parsed.end;
+            continue;
+          }
+        }
+      }
+    }
+    out += c;
+    i++;
+  }
+  return { code: out, imports };
+}
+
+// Generate the replay statement for one parsed import. Assignments resolve
+// through the with() scope proxy (the locals are seeded), so imported values
+// land in component state like any other declaration.
+function importAssign(imp) {
+  const spec = JSON.stringify(imp.spec);
+  const parts = [];
+  if (imp.defaultName) parts.push(`"default": ${imp.defaultName}`);
+  for (const [key, local] of imp.named) parts.push(`${key}: ${local}`);
+  if (imp.nsName) {
+    let s = `${imp.nsName} = await __import__(${spec});`;
+    if (parts.length) s += ` ({ ${parts.join(', ')} } = ${imp.nsName});`;
+    return s;
+  }
+  if (parts.length) return `({ ${parts.join(', ')} } = await __import__(${spec}));`;
+  return `await __import__(${spec});`;
+}
+
+// The per-component module loader. Relative (`./x.js`, `../x.js`) and
+// root-absolute (`/x.js`) specifiers resolve against the COMPONENT FILE's
+// URL — not the page — so a module can sit next to its component. Bare
+// specifiers pass through untouched for the browser's import maps. The
+// `__SPARK_IMPORT__` global is the seam spark-prerender (and tests) use to
+// load modules from disk instead.
+function makeImporter(componentEl) {
+  return (spec) => {
+    const hook = globalThis.__SPARK_IMPORT__;
+    if (hook) return Promise.resolve(hook(spec, componentEl.__sparkImportPath || null));
+    let resolved = spec;
+    if (/^\.{0,2}\//.test(spec)) {
+      const base = new URL(componentEl.__sparkImportPath || '.', document.baseURI || location.href);
+      resolved = new URL(spec, base).href;
+    }
+    return import(/* @vite-ignore */ resolved);
+  };
+}
+
+// ─── Script analysis + compile caches ──────────────────────────────────
+// Everything derived from a component's <script> SOURCE — the declaration
+// rewrites, seeded names, `$:` statements, prop names, imports — is a pure
+// function of that string. A list of 50 identical card components used to
+// re-run the whole regex/tokenizer pipeline and recompile the script 50
+// times; now both are computed once per distinct source.
+const analysisCache = new Map();
+function analyzeScript(rawCode) {
+  let a = analysisCache.get(rawCode);
+  if (a) return a;
   // Normalize line endings + strip comments so the declaration regexes
   // behave identically on every OS/editor. (CRLF was a real-world bug.)
   let code = rawCode.replace(/\r\n?/g, '\n');
+  // JS imports — lifted out first (they can't be props or `$:` statements).
+  const importsOut = extractImports(code);
+  code = importsOut.code;
+  const imports = importsOut.imports;
   // `export let x = …` marks a PROP (overridable from the import
   // placeholder). Record prop names, then treat as a normal declaration.
   const propNames = new Set();
@@ -1096,24 +1266,25 @@ function makeScope(rawCode, componentEl, props = {}) {
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
 
-  const raw = Object.create(null);
-
-  // Seed every top-level declared identifier so the proxy `has` trap
-  // claims it inside the with() block.
+  // Every name to seed on the scope so the proxy `has` trap claims it
+  // inside the with() block.
+  const seedNames = [];
   const funcRe =
     /(?:^|[\n;{}])\s*(?:async\s+)?function\s+([a-zA-Z_$][\w$]*)/g;
   let m;
-  for (const n of extractDeclaredNames(codeNoComments)) raw[n] = undefined;
-  while ((m = funcRe.exec(codeNoComments)) !== null) raw[m[1]] = undefined;
+  for (const n of extractDeclaredNames(codeNoComments)) seedNames.push(n);
+  while ((m = funcRe.exec(codeNoComments)) !== null) seedNames.push(m[1]);
   // `$: x = …` implicitly declares x
   for (const stmt of reactiveStmts) {
     const t = stmt.match(/^([a-zA-Z_$][\w$]*)\s*=[^=]/);
-    if (t) raw[t[1]] = undefined;
+    if (t) seedNames.push(t[1]);
   }
-  // Each `$:` statement becomes an effect carrying the keys it reads
-  // (stamped on `__sparkReadKeys` by withCapture, like a DOM binding), so a
-  // dirty-mode flush re-runs only the statements whose inputs changed.
-  const reactiveEffects = reactiveStmts.map((src) => ({ src }));
+  // Imported locals are scope keys too.
+  for (const imp of imports) {
+    if (imp.defaultName) seedNames.push(imp.defaultName);
+    if (imp.nsName) seedNames.push(imp.nsName);
+    for (const [, local] of imp.named) seedNames.push(local);
+  }
 
   // Rewrite declarations to bare assignments so they hit the proxy.
   let rewritten = code.replace(
@@ -1129,6 +1300,45 @@ function makeScope(rawCode, componentEl, props = {}) {
     /(^|[\n;{}])(\s*)(?:let|const|var)\s+(?=[a-zA-Z_$])/g,
     (_, before, space) => `${before}${space}`,
   );
+  // Hoist the import replays above the rest of the script, in source order —
+  // ESM semantics: imports evaluate first, wherever they were written.
+  if (imports.length) {
+    rewritten = imports.map(importAssign).join('\n') + '\n' + rewritten;
+  }
+
+  a = { rewritten, seedNames, propNames, reactiveStmts, hasImports: imports.length > 0 };
+  analysisCache.set(rawCode, a);
+  return a;
+}
+
+// Compile a rewritten component script once per distinct source; every
+// instance of the same component shares the compiled function (it closes
+// over nothing — scope and importer arrive as arguments).
+const scriptCache = new Map();
+function compileScript(body, isAsync) {
+  const key = (isAsync ? 'a:' : 's:') + body;
+  let fn = scriptCache.get(key);
+  if (!fn) {
+    // Newline before `}` so a script ending in a `//` comment still closes.
+    fn = isAsync
+      ? new Function('__scope__', '__import__', `return (async () => { with(__scope__) {\n${body}\n} })()`)
+      : new Function('__scope__', `with(__scope__) {\n${body}\n}`);
+    scriptCache.set(key, fn);
+  }
+  return fn;
+}
+
+// ─── Reactive scope ────────────────────────────────────────────────────
+function makeScope(rawCode, componentEl, props = {}) {
+  const { rewritten, seedNames, propNames, reactiveStmts, hasImports } =
+    analyzeScript(rawCode);
+
+  const raw = Object.create(null);
+  for (const n of seedNames) raw[n] = undefined;
+  // Each `$:` statement becomes an effect carrying the keys it reads
+  // (stamped on `__sparkReadKeys` by withCapture, like a DOM binding), so a
+  // dirty-mode flush re-runs only the statements whose inputs changed.
+  const reactiveEffects = reactiveStmts.map((src) => ({ src }));
 
   // Builtins available inside every component script.
   const scopeRef = { scope: null };
@@ -1331,11 +1541,10 @@ function makeScope(rawCode, componentEl, props = {}) {
     queueMicrotask(flush);
   }
 
-  try {
-    // Newline before `}` so a script ending in a `//` comment still closes.
-    new Function('__scope__', `with(__scope__) {\n${rewritten}\n}`)(scope);
+  // Shared post-script sequence: mark ready, apply props over `export let`
+  // defaults, run `$:` once, render.
+  const finish = () => {
     ready = true;
-    // Props override `export let` defaults.
     for (const [key, value] of Object.entries(props)) {
       if (propNames.has(key)) raw[key] = value;
       else if (!Object.hasOwn(raw, key)) raw[key] = value;
@@ -1343,13 +1552,35 @@ function makeScope(rawCode, componentEl, props = {}) {
     runReactive();
     patch(componentEl, scope);
     patchSlots();
-  } catch (e) {
-    // A throw here means the whole <script> failed to run, so none of the
-    // component's state/handlers exist — make that unmistakable.
+  };
+  // A throw here means the whole <script> failed to run, so none of the
+  // component's state/handlers exist — make that unmistakable.
+  const reportScriptError = (e) =>
     reportError(e, {
       phase: 'script', component: componentEl.getAttribute('name'),
       detail: 'the <script> failed to run — state and handlers are unavailable',
     });
+
+  try {
+    const fn = compileScript(rewritten, hasImports);
+    if (hasImports) {
+      // Imports make the script async. The scope proxy exists NOW (handlers
+      // and useStore work the moment they're defined); the completion promise
+      // is stashed so boot/mount/hydration can wait before revealing — no
+      // flash of unimported state.
+      const p = fn(scope, makeImporter(componentEl)).then(finish).catch(reportScriptError);
+      componentEl.__sparkScriptReady = p;
+      // Prerender: ride the same channel <template await> uses, so the settle
+      // loop waits for the modules to load + the post-import render.
+      if (isPrerender() && Array.isArray(globalThis.__SPARK_AWAITS__)) {
+        globalThis.__SPARK_AWAITS__.push(p);
+      }
+    } else {
+      fn(scope);
+      finish();
+    }
+  } catch (e) {
+    reportScriptError(e);
   }
   return scope;
 }
@@ -2261,7 +2492,7 @@ function bootComponent(el) {
     reveal(el); // don't strand a failed component cloaked/invisible
   }
 
-  requestAnimationFrame(() => {
+  const finishBoot = () => requestAnimationFrame(() => {
     try {
       patch(el, el.__sparkScope || {});
     } catch (e) {
@@ -2281,6 +2512,12 @@ function bootComponent(el) {
     el.__sparkOnMount = [];
     reveal(el); // booted, styled and patched — safe to show (no FOUC)
   });
+  // A script with JS imports finishes asynchronously — hold the first-paint
+  // patch/onMount/reveal until its modules are in, so the component never
+  // shows (or runs onMount against) half-initialized state.
+  const scriptReady = el.__sparkScriptReady;
+  if (scriptReady) scriptReady.then(finishBoot, finishBoot);
+  else finishBoot();
 }
 
 // ─── Teardown ─────────────────────────────────────────────────────────
@@ -2555,8 +2792,17 @@ async function mount(root = document.body, options = {}) {
 
   const run = async () => {
     await resolveImports(root);
-    root.querySelectorAll('[name]').forEach(bootComponent);
-    if (root.hasAttribute && root.hasAttribute('name')) bootComponent(root);
+    const booted = [...root.querySelectorAll('[name]')];
+    booted.forEach(bootComponent);
+    if (root.hasAttribute && root.hasAttribute('name')) {
+      bootComponent(root);
+      booted.push(root);
+    }
+    // Scripts with JS imports settle asynchronously — wait for them so
+    // mount()'s promise still means "everything is booted". (These promises
+    // never reject; failures are contained + reported per component.)
+    const waits = booted.map((el) => el.__sparkScriptReady).filter(Boolean);
+    if (waits.length) await Promise.all(waits);
     // Safety net: anything still cloaked (e.g. a component whose script
     // threw before the rAF reveal) is shown now, so a bug can never leave
     // the page permanently invisible.
@@ -2592,13 +2838,30 @@ function component(name, source) {
   registry.set(name, source);
 }
 
-// Patch fetch path resolution: check the registry first.
-const _origFetchComponent = async (path) => {
+// Patch fetch path resolution: check the registry first. Concurrent requests
+// for the SAME component path (e.g. a list rendering 50 identical card
+// imports in one mount wave) share ONE fetch — the entry is dropped as soon
+// as it settles, so dev edits (HMR re-mounts) always re-fetch fresh.
+const inflightComponents = new Map();
+const _origFetchComponent = (path) => {
   const bare = path.replace(/\.html$/, '');
   if (registry.has(bare)) {
-    return { ok: true, text: async () => registry.get(bare) };
+    return Promise.resolve({ ok: true, text: async () => registry.get(bare) });
   }
-  return fetch(path);
+  let p = inflightComponents.get(path);
+  if (!p) {
+    // Read the body ONCE here — a shared real Response would throw
+    // "body already read" on the second .text() call.
+    p = (async () => {
+      const res = await fetch(path);
+      if (!res.ok) return { ok: false, status: res.status };
+      const text = await res.text();
+      return { ok: true, status: res.status, text: async () => text };
+    })();
+    inflightComponents.set(path, p);
+    p.then(() => inflightComponents.delete(path), () => inflightComponents.delete(path));
+  }
+  return p;
 };
 
 /**
