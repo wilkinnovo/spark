@@ -132,6 +132,38 @@ function resolveIn(container, path) {
   return dynamic || prefix || (fallback ? { tpl: fallback, params: {} } : null);
 }
 
+// ── Default 404 ────────────────────────────────────────────────────────
+// A routed page with no catch-all used to render NOTHING for an unknown URL
+// (blank outlet area). Now the router fills the gap with a minimal built-in
+// not-found view. A user-authored <template route="*"> always wins — the
+// default is only injected when no catch-all exists.
+// NOTE: spark-prerender ships the same markup (its build runs without the
+// router) — keep the two in sync.
+function defaultNotFoundHTML(home) {
+  return (
+    `<main data-spark-404 style="max-width:32rem;margin:15vh auto;padding:0 1.5rem;text-align:center;font-family:system-ui,sans-serif">` +
+    `<p style="font-size:3.5rem;font-weight:700;margin:0">404</p>` +
+    `<h1 style="font-size:1.25rem;margin:.25rem 0 1rem">Page not found</h1>` +
+    `<p style="opacity:.7;margin:0 0 1.5rem">The page you're looking for doesn't exist or may have moved.</p>` +
+    `<a href="${home}">Go to the homepage</a>` +
+    `</main>`
+  );
+}
+
+// Inject the default catch-all after the last top-level route template so an
+// unmatched path renders it exactly where routes normally appear.
+function ensureCatchAll() {
+  if (!rootEl || !rootEl.querySelectorAll) return;
+  const templates = templatesAt(rootEl);
+  if (!templates.length) return; // not a routed page — nothing to catch
+  if (templates.some((t) => t.getAttribute('route') === '*')) return; // user's 404 wins
+  const tpl = document.createElement('template');
+  tpl.setAttribute('route', '*');
+  tpl.setAttribute('data-spark-default-404', '');
+  tpl.innerHTML = defaultNotFoundHTML(base ? base + '/' : '/');
+  templates[templates.length - 1].after(tpl);
+}
+
 function sameParams(a, b) {
   const ak = Object.keys(a || {}), bk = Object.keys(b || {});
   return ak.length === bk.length && ak.every((k) => a[k] === b[k]);
@@ -306,6 +338,7 @@ export async function router(options = {}) {
   if (typeof document !== 'undefined') document.addEventListener('click', onClick);
   if (typeof window !== 'undefined') window.addEventListener('popstate', () => render({ isPop: true }));
 
+  ensureCatchAll();      // built-in 404 for pages that declare no route="*"
   prepareInitial();      // put the active route's outlet in the DOM (adopt/clone)
   await mount(rootEl, options);   // ONE mount: chrome + the active route, booted once
   markActiveLinks();     // highlight the matching <a> (aria-current="page")

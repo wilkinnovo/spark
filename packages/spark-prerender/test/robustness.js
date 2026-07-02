@@ -30,5 +30,14 @@ await test('an import inside <template if> renders during prerender', async () =
   assert.ok(out.includes('name="card"'), 'inner component host present');
 });
 
+await test('onMount is skipped at build time — no __SPARK_PRERENDER__ guard needed', async () => {
+  // The component's onMount opens a WebSocket (live-only work that used to
+  // crash or hang the build unless the author added a manual guard).
+  delete globalThis.__liveOnlyMountRan;
+  const out = await prerender(join(here, 'fixture', 'live-only.html'));
+  assert.ok(out.includes('skeleton'), 'the loading state is what gets baked');
+  assert.equal(globalThis.__liveOnlyMountRan, undefined, 'onMount must not run during prerender');
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

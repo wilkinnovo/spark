@@ -6,7 +6,7 @@ import { strict as assert } from 'node:assert';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { readFileSync } from 'node:fs';
-import { prerender, routesOf, routeToFile, redirectsFor, vercelConfigFor } from '../src/prerender.js';
+import { prerender, routesOf, routeToFile, redirectsFor, vercelConfigFor, NOT_FOUND_ROUTE } from '../src/prerender.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const entry = join(here, 'fixture', 'routed.html');
@@ -68,6 +68,15 @@ await test('an unknown path renders the catch-all (404) page', async () => {
   const missing = await prerender(entry, { route: '/nope' });
   assert.ok(missing.includes('404 Not Found page'), 'catch-all rendered');
   assert.ok(/data-spark-route="\/nope"/.test(missing));
+});
+
+await test('no user catch-all: an unknown path bakes the built-in default 404', async () => {
+  const noFallback = join(here, 'fixture', 'routed-no404.html');
+  const missing = await prerender(noFallback, { route: NOT_FOUND_ROUTE });
+  assert.ok(missing.includes('data-spark-404'), 'default not-found view baked');
+  assert.ok(missing.includes('Page not found'), 'default copy present');
+  assert.ok(!missing.includes('home page'), 'no route content leaked');
+  assert.ok(/<template route="\/">/.test(missing), 'route templates preserved for the client router');
 });
 
 await test('redirects + vercel config rewrite clean URLs with an SPA fallback', () => {

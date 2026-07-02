@@ -76,5 +76,39 @@ await test('a script syntax error names the component and says state is unavaila
   assert.ok(w.some((x) => x.includes('badscript')), 'should name the component');
 });
 
+// ── async onMount: a rejection is contained + reported, and a resolved
+// cleanup function still registers (it used to escape as an unhandled
+// promise rejection and the cleanup was dropped).
+component('asyncmount', `
+<p class="am">{msg}</p>
+<script>
+  let msg = 'up';
+  onMount(async () => {
+    globalThis.__asyncCleanupRegistered = false;
+    if (globalThis.__asyncMountThrow) throw new Error('socket exploded');
+    return () => { globalThis.__asyncCleanupRegistered = true; };
+  });
+</script>`);
+
+await test('an async onMount rejection is reported, not an unhandled rejection', async () => {
+  globalThis.__asyncMountThrow = true;
+  const captured = [];
+  const onUnhandled = (e) => captured.push(e);
+  process.on('unhandledRejection', onUnhandled);
+  console.warn = (...args) => { warnings.push(args.join(' ')); };
+  try {
+    parseHTML('<div import="asyncmount"></div>', body);
+    await mount(body, { quiet: true });
+    await tick(); await tick();
+  } finally {
+    console.warn = realWarn;
+    process.off('unhandledRejection', onUnhandled);
+  }
+  assert.equal(captured.length, 0, 'no unhandled rejection escaped');
+  const w = sparkWarns('socket exploded');
+  assert.ok(w.some((x) => x.includes('onMount') && x.includes('asyncmount')),
+    `expected an onMount warning naming the component, got: ${w.join(' | ')}`);
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

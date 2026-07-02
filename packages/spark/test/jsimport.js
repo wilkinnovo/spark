@@ -329,6 +329,65 @@ await test('siblings of a failed-import component still boot', () => {
   assert.equal(body.querySelector('[name="sibling1"] .s').textContent, 'alive');
 });
 
+// ─── slot content lent to an imported child while the lender's script is
+// still awaiting its JS imports ──────────────────────────────────────────
+// Regression: the child's first patch used to walk parent-scoped slot content
+// BEFORE the parent's async (import-bearing) script finished — every binding
+// evaluated against seeded `undefined`s and warned (":hidden — Cannot read
+// properties of undefined", "each expected an array but got string", …), in
+// the browser and at prerender time. Now the walk is deferred until the
+// lender's scope is ready; no spurious warnings, and the content renders
+// correctly once the import lands.
+console.log('\nslots + pending script imports');
+const slotWarns = [];
+const origWarn = console.warn;
+console.warn = (...a) => { slotWarns.push(a.join(' ')); origWarn(...a); };
+const prevHook = globalThis.__SPARK_IMPORT__;
+globalThis.__SPARK_IMPORT__ = (spec, importer) => {
+  if (spec === './slow-data.js') {
+    return new Promise((r) => setTimeout(() => r({
+      projects: { all: [{ t: 'Alpha' }, { t: 'Beta' }], featured: [{ t: 'Alpha' }] },
+    }), 15));
+  }
+  return prevHook(spec, importer);
+};
+component('skel1', `
+  <div class="wrap">
+    <div class="shim"><slot name="shim">shim fallback</slot></div>
+    <slot>default fallback</slot>
+  </div>
+`);
+component('slotpage1', `
+  <div import="skel1">
+    <div slot="shim">shimmer</div>
+    <p class="feat" :hidden="featured.length === 0">featured!</p>
+    <template each="project in projects.all"><span class="proj">{project.t}</span></template>
+    <span class="count">{projects.all.length}</span>
+  </div>
+  <script>
+    import { projects } from './slow-data.js';
+    let featured = [];
+    $: featured = projects.featured ?? [];
+  </script>
+`);
+parseHTML('<div import="slotpage1"></div>', body);
+await mount(body, { quiet: true });
+await tick(40);
+console.warn = origWarn;
+globalThis.__SPARK_IMPORT__ = prevHook;
+
+await test('no premature-evaluation warnings for lent slot content', () => {
+  const spurious = slotWarns.filter((w) =>
+    /Cannot read properties of undefined|expected an array/.test(w));
+  assert.deepEqual(spurious, []);
+});
+await test('lent slot content renders once the lender\'s import lands', () => {
+  const page = body.querySelector('[name="slotpage1"]');
+  assert.equal(page.querySelector('.feat').hasAttribute('hidden'), false);
+  assert.equal(page.querySelectorAll('.proj').length, 2);
+  assert.equal(page.querySelector('.count').textContent, '2');
+});
+
 // ─── native data: modules (no hook — real dynamic import) ──────────────
 console.log('\nnative dynamic import');
 delete globalThis.__SPARK_IMPORT__;

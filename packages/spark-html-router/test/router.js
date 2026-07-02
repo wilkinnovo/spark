@@ -94,6 +94,11 @@ await test('a catch-all route="*" renders for unknown paths', async () => {
   has('404 missing');
   hasnt('About us');
 });
+await test('a user catch-all suppresses the built-in default 404', () => {
+  assert.equal(body.querySelector('template[data-spark-default-404]'), null,
+    'no default catch-all injected when the page declares route="*"');
+  assert.equal(body.querySelector('[data-spark-404]'), null, 'default view never rendered');
+});
 await test('SPA navigation does not reprint the "⚡ ready" banner', async () => {
   const orig = console.log;
   const lines = [];

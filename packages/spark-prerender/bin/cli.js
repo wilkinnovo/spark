@@ -18,8 +18,9 @@
  *   -h, --help           Show this help.
  */
 import { writeFile, mkdir, readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { resolve, dirname, join, basename } from 'node:path';
-import { prerender, routesOf, routeToFile, redirectsFor, vercelConfigFor } from '../src/prerender.js';
+import { prerender, routesOf, routeToFile, redirectsFor, vercelConfigFor, NOT_FOUND_ROUTE } from '../src/prerender.js';
 
 function parseArgs(argv) {
   const entries = [];
@@ -68,6 +69,12 @@ async function main() {
         const rendered = [];
         for (const route of all) {
           rendered.push([route, routeToFile(route), await prerender(entryAbs, { root: opts.root, route })]);
+        }
+        // 404.html — served by GitHub Pages (and most static hosts) for any
+        // unknown path. A user-provided one wins: skip if it already exists in
+        // the out dir or the app declares a /404 route.
+        if (!existsSync(join(outDir, '404.html')) && !all.some((r) => routeToFile(r) === '404.html')) {
+          rendered.push(['(catch-all)', '404.html', await prerender(entryAbs, { root: opts.root, route: NOT_FOUND_ROUTE })]);
         }
         for (const [route, name, html] of rendered) {
           const dest = join(outDir, name);

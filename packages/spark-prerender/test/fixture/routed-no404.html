@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><title>routed, no catch-all</title></head>
+  <body>
+    <nav><a href="/about">About</a></nav>
+    <template route="/"><div import="components/home-pg"></div></template>
+    <template route="/about"><div import="components/about-pg"></div></template>
+    <script type="module">import { router } from 'spark-html-router'; router();</script>
+  </body>
+</html>

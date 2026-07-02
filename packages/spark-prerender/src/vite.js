@@ -20,7 +20,8 @@
  */
 import { resolve, join, dirname } from 'node:path';
 import { writeFile, mkdir, readFile } from 'node:fs/promises';
-import { prerender, routesOf, routeToFile, redirectsFor, vercelConfigFor } from './prerender.js';
+import { existsSync } from 'node:fs';
+import { prerender, routesOf, routeToFile, redirectsFor, vercelConfigFor, NOT_FOUND_ROUTE } from './prerender.js';
 
 /**
  * @param {object} [options]
@@ -55,6 +56,13 @@ export default function sparkPrerender(options = {}) {
             const rendered = [];
             for (const route of all) {
               rendered.push([routeToFile(route), await prerender(file, { root, route, projectRoot, ...(options.prerender || {}) })]);
+            }
+            // 404.html — GitHub Pages (and most static hosts) serve it for any
+            // unknown path, so no manual generate-404 build step is needed. A
+            // user-provided one always wins: skip if the build already emitted
+            // a 404.html (e.g. from public/) or the app declares a /404 route.
+            if (!existsSync(join(root, '404.html')) && !all.some((r) => routeToFile(r) === '404.html')) {
+              rendered.push(['404.html', await prerender(file, { root, route: NOT_FOUND_ROUTE, projectRoot, ...(options.prerender || {}) })]);
             }
             for (const [name, out] of rendered) {
               const dest = join(root, name);

@@ -1,0 +1,13 @@
+<p class="status">{status}</p>
+<script>
+  let status = 'skeleton';
+  // Live-only setup: would crash/hang in Node (no WebSocket server, and the
+  // global may not behave like a browser's). Must NOT need a
+  // `typeof __SPARK_PRERENDER__` guard — the prerender skips onMount.
+  onMount(async () => {
+    globalThis.__liveOnlyMountRan = true;
+    const ws = new WebSocket('ws://127.0.0.1:1/nope');
+    ws.onmessage = (e) => { status = e.data; };
+    return () => ws.close();
+  });
+</script>

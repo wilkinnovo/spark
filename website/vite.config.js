@@ -1,5 +1,5 @@
 import { defineConfig } from 'vite';
-import { copyFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { build as esbuild } from 'esbuild';
@@ -79,21 +79,12 @@ function prerenderFetch(url) {
 // sets BASE_PATH; locally it defaults to '/'.
 const base = process.env.BASE_PATH ?? '/';
 
-// Deep-link fallback for GitHub Pages (no server rewrites): serve the SPA shell
-// for unknown paths so /docs etc. load and the router takes over.
-function spa404() {
-  return {
-    name: 'spa-404', apply: 'build',
-    closeBundle: { order: 'post', handler() {
-      const idx = resolve('dist', 'index.html');
-      if (existsSync(idx)) copyFileSync(idx, resolve('dist', '404.html'));
-    } },
-  };
-}
-
 export default defineConfig({
   base,
   // spark() serves components in dev; prerender() auto-detects the
-  // <template route> blocks and emits one fully-rendered HTML file per route.
-  plugins: [sparkStats(), spark(), prerender({ prerender: { fetch: prerenderFetch } }), spa404()],
+  // <template route> blocks and emits one fully-rendered HTML file per route,
+  // plus 404.html — GitHub Pages serves it for unknown paths, and since the
+  // full app shell + router ship in it, deep links still resolve client-side
+  // (this replaced the old spa404() copy-index.html workaround).
+  plugins: [sparkStats(), spark(), prerender({ prerender: { fetch: prerenderFetch } })],
 });

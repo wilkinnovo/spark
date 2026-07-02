@@ -6,7 +6,7 @@
 import { strict as assert } from 'node:assert';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { mkdtempSync, cpSync, readFileSync, copyFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, cpSync, readFileSync, copyFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import sparkPrerender from '../src/vite.js';
 
@@ -74,6 +74,52 @@ await test('routed entry: each route file is isolated (no home leak)', async () 
   assert.ok(existsSync(join(rdist, '_redirects')), '_redirects in the output dir');
   assert.ok(existsSync(join(proot, 'vercel.json')), 'vercel.json at the project root');
   assert.ok(!existsSync(join(rdist, 'vercel.json')), 'vercel.json must NOT be in dist/');
+});
+
+await test('routed entry: 404.html is generated from the catch-all automatically', async () => {
+  const proot = mkdtempSync(join(tmpdir(), 'spark-404-'));
+  const rdist = join(proot, 'dist');
+  cpSync(join(here, 'fixture'), rdist, { recursive: true });
+  copyFileSync(join(here, 'fixture', 'routed.html'), join(rdist, 'index.html'));
+
+  const p = sparkPrerender({ pages: ['index.html'] });
+  p.configResolved({ root: proot, build: { outDir: rdist } });
+  await p.closeBundle();
+
+  assert.ok(existsSync(join(rdist, '404.html')), '404.html emitted without manual wiring');
+  const nf = readFileSync(join(rdist, '404.html'), 'utf8');
+  assert.ok(nf.includes('404 Not Found page'), "the user's route=\"*\" content is used");
+  assert.ok(!nf.includes('home page'), 'no route content leaked into 404.html');
+});
+
+await test('routed entry without a catch-all: 404.html uses the built-in default', async () => {
+  const proot = mkdtempSync(join(tmpdir(), 'spark-404d-'));
+  const rdist = join(proot, 'dist');
+  cpSync(join(here, 'fixture'), rdist, { recursive: true });
+  copyFileSync(join(here, 'fixture', 'routed-no404.html'), join(rdist, 'index.html'));
+
+  const p = sparkPrerender({ pages: ['index.html'] });
+  p.configResolved({ root: proot, build: { outDir: rdist } });
+  await p.closeBundle();
+
+  const nf = readFileSync(join(rdist, '404.html'), 'utf8');
+  assert.ok(nf.includes('data-spark-404'), 'built-in default 404 baked');
+  assert.ok(nf.includes('Page not found'), 'default copy present');
+});
+
+await test('a user-provided 404.html is never overwritten', async () => {
+  const proot = mkdtempSync(join(tmpdir(), 'spark-404u-'));
+  const rdist = join(proot, 'dist');
+  cpSync(join(here, 'fixture'), rdist, { recursive: true });
+  copyFileSync(join(here, 'fixture', 'routed.html'), join(rdist, 'index.html'));
+  writeFileSync(join(rdist, '404.html'), '<!doctype html><h1>my very own 404</h1>\n', 'utf8');
+
+  const p = sparkPrerender({ pages: ['index.html'] });
+  p.configResolved({ root: proot, build: { outDir: rdist } });
+  await p.closeBundle();
+
+  const nf = readFileSync(join(rdist, '404.html'), 'utf8');
+  assert.ok(nf.includes('my very own 404'), "the user's 404.html survives the build untouched");
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

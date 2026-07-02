@@ -61,6 +61,13 @@ reads it from the deployed output), but `vercel.json` is written to the
 **project root** — Vercel reads its config from the repo root, not the build
 output, so a copy under `dist/` would be silently ignored.
 
+A routed entry also emits **`404.html`** automatically — GitHub Pages (and
+most static hosts) serve it for unknown paths, so no manual generate-404 build
+step is needed. It renders the app's `route="*"` catch-all (or the router's
+built-in default 404 when none is declared). A `404.html` you ship yourself
+(e.g. from `public/`) or a declared `/404` route always wins — the generated
+one is skipped.
+
 ### Options
 
 | Flag | Meaning |
@@ -94,6 +101,15 @@ defined wins, in DOM order) and writes them into `<head>`:
 `ogTitle` / `ogDescription` / `ogImage` (→ `<meta property="og:…">`). Pass your
 own `meta` mapping to `prerender()` to customize. If no component declares a
 var, the entry HTML's existing `<head>` is left as-is.
+
+## `onMount` never runs at build time
+
+`onMount` is live-only lifecycle (WebSockets, timers, DOM measurements) — the
+prerender skips it entirely, and the browser runs it normally when the page
+mounts. Components need **no** `typeof __SPARK_PRERENDER__ !== 'undefined'`
+guard: async setup that would crash or hang in Node simply doesn't run, and
+the component's loading/skeleton state is what gets baked. For content that
+should land in the static HTML, use `load()` (below) or `<template await>`.
 
 ## Dynamic data — the `load()` hook
 

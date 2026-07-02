@@ -180,15 +180,22 @@ function compileStmt(code) {
   return fn;
 }
 
-function evaluate(code, scope) {
+// Run an already-compiled expression. Split from evaluate() so hot callers
+// (bindings, loop/if/await anchors) can compile ONCE at parse time and skip
+// the cache lookup on every patch.
+function runExpr(fn, code, scope) {
   try {
-    return compileExpr(code)(scope);
+    return fn(scope);
   } catch (e) {
     // A thrown evaluation (e.g. reading a property of undefined) renders as
     // empty — tell the consumer which expression and why, once.
     warnOnce(`e:${code}`, `[spark] Error evaluating {${code}} — ${e.message}. (Rendered as empty. Use {a?.b} for values that may be missing.)`);
     return '';
   }
+}
+
+function evaluate(code, scope) {
+  return runExpr(compileExpr(code), code, scope);
 }
 
 function execute(code, scope, event = null, __val__ = undefined, ctx = null) {
@@ -281,7 +288,12 @@ function parseTemplate(template) {
       if (end === -1) { lit += c; i++; continue; } // unbalanced → literal
       flush();
       const code = template.slice(i + 1, end).trim().replace(/(?:;\s*)+$/, '');
-      if (code) segs.push({ code: exprSemicolons(code) });
+      if (code) {
+        const cleaned = exprSemicolons(code);
+        // Compile now — the parse is cached per template, so every later
+        // interpolation of this segment skips the expr-cache lookup too.
+        segs.push({ code: cleaned, fn: compileExpr(cleaned) });
+      }
       i = end + 1;
       continue;
     }
@@ -1545,6 +1557,7 @@ function makeScope(rawCode, componentEl, props = {}) {
   // defaults, run `$:` once, render.
   const finish = () => {
     ready = true;
+    componentEl.__sparkScopePending = false;
     for (const [key, value] of Object.entries(props)) {
       if (propNames.has(key)) raw[key] = value;
       else if (!Object.hasOwn(raw, key)) raw[key] = value;
@@ -1555,11 +1568,13 @@ function makeScope(rawCode, componentEl, props = {}) {
   };
   // A throw here means the whole <script> failed to run, so none of the
   // component's state/handlers exist — make that unmistakable.
-  const reportScriptError = (e) =>
+  const reportScriptError = (e) => {
+    componentEl.__sparkScopePending = false;
     reportError(e, {
       phase: 'script', component: componentEl.getAttribute('name'),
       detail: 'the <script> failed to run — state and handlers are unavailable',
     });
+  };
 
   try {
     const fn = compileScript(rewritten, hasImports);
@@ -1567,7 +1582,10 @@ function makeScope(rawCode, componentEl, props = {}) {
       // Imports make the script async. The scope proxy exists NOW (handlers
       // and useStore work the moment they're defined); the completion promise
       // is stashed so boot/mount/hydration can wait before revealing — no
-      // flash of unimported state.
+      // flash of unimported state. Until it settles, the component's state is
+      // still the seeded `undefined`s — flag that so a CHILD component's patch
+      // doesn't evaluate slot content lent by this component too early.
+      componentEl.__sparkScopePending = true;
       const p = fn(scope, makeImporter(componentEl)).then(finish).catch(reportScriptError);
       componentEl.__sparkScriptReady = p;
       // Prerender: ride the same channel <template await> uses, so the settle
@@ -1791,8 +1809,18 @@ function walkNode(node, scope, isRoot = false) {
     }
     // Slot-projected content belongs to the parent component — patch it
     // with the parent's scope, not the component it now physically sits in.
-    if (child.__sparkSlotHost && child.__sparkSlotHost.__sparkScope) {
-      walkNode(child, child.__sparkSlotHost.__sparkScope);
+    if (child.__sparkSlotHost) {
+      const lender = child.__sparkSlotHost;
+      // The lender may not be booted yet, or its script may still be
+      // initializing (async JS imports) — its state isn't in scope, so
+      // evaluating now reports spurious errors against seeded `undefined`s.
+      // Skip: the lender's own first patch (finish → patchSlots) walks this
+      // content once its state exists.
+      if (!lender.__sparkScope || lender.__sparkScopePending) {
+        allStatic = false;
+        continue;
+      }
+      walkNode(child, lender.__sparkScope);
       if (!isStaticNode(child)) allStatic = false;
       continue;
     }
@@ -2620,17 +2648,30 @@ function bootComponent(el) {
     } catch (e) {
       reportError(e, { phase: 'patch', component: tag });
     }
-    // onMount fires once, after the first paint-ready patch.
-    (el.__sparkOnMount || []).forEach((fn) => {
-      try {
-        const cleanup = fn();
-        if (typeof cleanup === 'function') {
-          (el.__sparkOnDestroy ||= []).push(cleanup);
+    // onMount fires once, after the first paint-ready patch. NOT during
+    // prerender: there's no paint and no browser at build time — onMount is
+    // live-only lifecycle (WebSockets, timers, measurements), so components
+    // need no `typeof __SPARK_PRERENDER__` guard. Build-time data belongs in
+    // load() / <template await>; the client runs onMount normally on mount.
+    if (!isPrerender()) {
+      (el.__sparkOnMount || []).forEach((fn) => {
+        try {
+          const cleanup = fn();
+          if (typeof cleanup === 'function') {
+            (el.__sparkOnDestroy ||= []).push(cleanup);
+          } else if (cleanup && typeof cleanup.then === 'function') {
+            // An async onMount: contain a rejection (it used to escape as an
+            // unhandled promise rejection) and accept a resolved cleanup fn.
+            cleanup.then(
+              (c) => { if (typeof c === 'function') (el.__sparkOnDestroy ||= []).push(c); },
+              (e) => reportError(e, { phase: 'onMount', component: tag }),
+            );
+          }
+        } catch (e) {
+          reportError(e, { phase: 'onMount', component: tag });
         }
-      } catch (e) {
-        reportError(e, { phase: 'onMount', component: tag });
-      }
-    });
+      });
+    }
     el.__sparkOnMount = [];
     reveal(el); // booted, styled and patched — safe to show (no FOUC)
   });

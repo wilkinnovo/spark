@@ -266,6 +266,15 @@ export async function prerender(entryPath, options = {}) {
         outlet.appendChild(child.cloneNode(true));
       }
       matched.after(outlet);
+    } else if (templates.length) {
+      // No matching route and no user catch-all — bake the router's built-in
+      // default 404 view (the client router injects the same markup at
+      // runtime; the prerender runs without the router, so it's mirrored
+      // here — keep in sync with spark-html-router).
+      const outlet = document.createElement('div');
+      outlet.setAttribute('data-spark-route', want);
+      outlet.innerHTML = defaultNotFoundHTML();
+      templates[templates.length - 1].after(outlet);
     }
   }
 
@@ -461,6 +470,26 @@ export async function prerender(entryPath, options = {}) {
 
 // ─── Routes (spark-html-router) ────────────────────────────────────────
 
+// The built-in not-found view, identical to the one spark-html-router injects
+// for pages that declare no <template route="*">. Duplicated (not imported)
+// so spark-prerender keeps zero dependency on the router package.
+function defaultNotFoundHTML(home = '/') {
+  return (
+    `<main data-spark-404 style="max-width:32rem;margin:15vh auto;padding:0 1.5rem;text-align:center;font-family:system-ui,sans-serif">` +
+    `<p style="font-size:3.5rem;font-weight:700;margin:0">404</p>` +
+    `<h1 style="font-size:1.25rem;margin:.25rem 0 1rem">Page not found</h1>` +
+    `<p style="opacity:.7;margin:0 0 1.5rem">The page you're looking for doesn't exist or may have moved.</p>` +
+    `<a href="${home}">Go to the homepage</a>` +
+    `</main>`
+  );
+}
+
+// The route the 404 page is rendered AS. It's deliberately unmatchable so the
+// prerender falls through to the catch-all (the user's route="*", or the
+// default above when none exists) — exactly what a visitor to an unknown URL
+// should see.
+export const NOT_FOUND_ROUTE = '/__spark-404__';
+
 // Normalize a route to a no-trailing-slash key ("/" stays "/").
 function normalizeRoute(p) {
   let s = String(p || '/');
@@ -508,4 +537,4 @@ export function vercelConfigFor(routes) {
   return JSON.stringify({ rewrites }, null, 2) + '\n';
 }
 
-export default { prerender, routesOf, routeToFile, redirectsFor, vercelConfigFor };
+export default { prerender, routesOf, routeToFile, redirectsFor, vercelConfigFor, NOT_FOUND_ROUTE };

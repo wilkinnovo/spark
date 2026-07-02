@@ -106,6 +106,11 @@ navigate('/about');                 // navigate programmatically
 - **Dynamic segments** — `route="/blog/:id"` matches `/blog/42`; the captured
   params land on the `route` store. Exact routes win over dynamic ones.
 - **Catch-all** — `route="*"` renders for any unmatched path (a 404 page).
+- **Default 404** — if the page declares no `route="*"`, the router injects a
+  minimal built-in not-found view (a 404 heading + a link home), so unknown
+  URLs never render a blank page. Declare your own `route="*"` to replace it.
+  With `spark-prerender`, a `404.html` is also generated automatically at
+  build time (your own `404.html`, e.g. from `public/`, always wins).
 
 ```html
 <template route="/blog/:id"><div import="components/post"></div></template>
