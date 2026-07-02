@@ -59,7 +59,7 @@ mount();
 
 ```html
 <script type="importmap">
-  { "imports": { "spark-html": "https://esm.sh/spark-html@0.23" } }
+  { "imports": { "spark-html": "https://esm.sh/spark-html@0.25" } }
 </script>
 <div import="components/counter"></div>
 <script type="module">import { mount } from 'spark-html'; mount()</script>
