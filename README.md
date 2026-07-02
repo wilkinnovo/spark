@@ -29,7 +29,7 @@ byte-for-byte — reactive, scoped, untouched.
 ```
 
 No compiler generates code from your template. No virtual DOM allocates and diffs
-a tree per frame. The file you write is what runs — 12 kB gzipped, zero dependencies.
+a tree per frame. The file you write is what runs — 13 kB gzipped, zero dependencies.
 
 ## Quick start
 
@@ -59,7 +59,7 @@ mount();
 
 ```html
 <script type="importmap">
-  { "imports": { "spark-html": "https://esm.sh/spark-html@0.25" } }
+  { "imports": { "spark-html": "https://esm.sh/spark-html@0.26" } }
 </script>
 <div import="components/counter"></div>
 <script type="module">import { mount } from 'spark-html'; mount()</script>
@@ -75,7 +75,7 @@ just files at a URL, so you can even `import` one straight from a CDN. See
   template. The file you write is what runs.
 - **No virtual DOM** — patches mutate the DOM directly. No intermediate tree to
   allocate, diff, or discard per frame.
-- **12 kB gzipped, zero dependencies** — parses, mounts, and patches in a single
+- **13 kB gzipped, zero dependencies** — parses, mounts, and patches in a single
   microtask.
 - **O(changed) dependency tracking** — each binding records which scope keys it
   reads. A write re-evaluates only the bindings that actually changed.
@@ -140,7 +140,7 @@ just files at a URL, so you can even `import` one straight from a CDN. See
 
 | Package | What it does |
 |---|---|
-| [`spark-html`](packages/spark/README.md) | The runtime — `mount()`, components, reactivity, `store`/`derived`, `bind:form`, scoped styles. 12 kB gzip, 0 deps. |
+| [`spark-html`](packages/spark/README.md) | The runtime — `mount()`, components, reactivity, `store`/`derived`, `bind:form`, scoped styles. 13 kB gzip, 0 deps. |
 
 **Optional sibling packages** (add only what you use)
 

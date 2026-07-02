@@ -15,7 +15,7 @@ Single-file HTML components with built-in reactivity. No compiler, no virtual DO
 </style>
 ```
 
-**12 kB gzipped**.
+**13 kB gzipped**.
 
 ---
 
